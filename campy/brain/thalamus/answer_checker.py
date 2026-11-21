@@ -86,13 +86,20 @@ def _loaded_models(host: str, timeout: float) -> list[str]:
         return [m.get("name") or m.get("model") for m in json.loads(resp.read().decode()).get("models", [])]
 
 
+def _tagged(name: str) -> str:
+    """Ollama lists models with a tag; an untagged name means ":latest"."""
+    name = (name or "").strip()
+    return name if ":" in name.rsplit("/", 1)[-1] else name + ":latest"
+
+
 def unload_model(config: dict, model: str, timeout: float = 30.0, wait: float = UNLOAD_WAIT_SECONDS) -> None:
     """Unload ``model`` from the local Ollama server and wait until /api/ps no longer lists it."""
     host = _ollama_host(config)
     try:
         _post_json(host + "/api/generate", {"model": model, "keep_alive": 0}, timeout)
         deadline = time.monotonic() + wait
-        while model in _loaded_models(host, timeout):
+        want = _tagged(model)
+        while want in {_tagged(m) for m in _loaded_models(host, timeout) if m}:
             if time.monotonic() > deadline:
                 raise RuntimeError(f"{model} still resident after {wait:.0f}s")
             time.sleep(0.25)

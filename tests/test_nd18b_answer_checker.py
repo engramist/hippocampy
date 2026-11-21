@@ -189,3 +189,19 @@ def test_stage_module_imports_no_torch():
              for a in getattr(n, "names", [])} | {n.module.split(".")[0] for n in ast.walk(tree)
                                                     if isinstance(n, ast.ImportFrom) and n.module}
     assert not names & {"torch", "transformers", "peft"}
+
+
+def test_unload_waits_on_untagged_names(monkeypatch):
+    """An untagged name is ":latest" in /api/ps; the wait must see it, not pass without checking."""
+    assert ac._tagged("big") == "big:latest" and ac._tagged("big:26b") == "big:26b"
+    assert ac._tagged("host.io/ns/big") == "host.io/ns/big:latest"
+    posted, lists = [], [["big:latest", "small:8b"], ["big:latest"], ["small:8b"]]
+    monkeypatch.setattr(ac, "_post_json", lambda url, body, t: posted.append(body) or {})
+    monkeypatch.setattr(ac, "_loaded_models", lambda host, t: lists.pop(0))
+    monkeypatch.setattr(ac.time, "sleep", lambda s: None)
+    ac.unload_model({"llm": {}}, "big")
+    assert posted == [{"model": "big", "keep_alive": 0}] and lists == []  # polled until gone
+
+    monkeypatch.setattr(ac, "_loaded_models", lambda host, t: ["big:latest"])
+    with pytest.raises(RuntimeError, match="still resident"):
+        ac.unload_model({"llm": {}}, "big", wait=0.0)

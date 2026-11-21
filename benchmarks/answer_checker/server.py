@@ -13,7 +13,8 @@ Endpoints (JSON over POST unless noted):
                                               or {"status": "skipped", "error"}
   /release {} -> {"status": "released"}: frees the weights (the next /check reloads them), so a larger answer
            model can run with nothing else resident (ND-18 amendment).
-  /health  (GET) -> {"status": "ok", "loaded": bool, "device", "dtype"}
+  /health  (GET) -> {"status": "ok", "loaded": bool, "device", "dtype", "mps_allocated_mb", "mps_driver_mb", "rss_mb"}
+           (the memory fields are the evidence that /release frees the weights)
 
 usage: python -I server.py --vendor DIR --vendor-module NAME --package DIR --base DIR --base-rev SHA
                            [--host 127.0.0.1] [--port 8765] [--smoke]
@@ -71,6 +72,16 @@ class Checker:
         self.model = m.eval()
         return round(time.perf_counter() - t0, 2)
 
+    def memory(self) -> dict:
+        import resource
+        out = {"mps_allocated_mb": None, "mps_driver_mb": None}
+        if self.dev == "mps":
+            out["mps_allocated_mb"] = round(self.torch.mps.current_allocated_memory() / 2**20, 1)
+            out["mps_driver_mb"] = round(self.torch.mps.driver_allocated_memory() / 2**20, 1)
+        out["rss_mb"] = _rss_mb()
+        out["max_rss_mb"] = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**20, 1)  # bytes on macOS
+        return out
+
     def release(self) -> None:
         with self.lock:
             self.model = None
@@ -98,6 +109,17 @@ class Checker:
                     "latency_s": round(time.perf_counter() - t, 2), "load_s": load_s}
 
 
+def _rss_mb():
+    """Current resident set size of this process (ps; the stdlib has only the peak)."""
+    import subprocess
+    try:
+        kb = subprocess.run(["ps", "-o", "rss=", "-p", str(os.getpid())], capture_output=True, text=True,
+                            timeout=5).stdout.strip()
+        return round(int(kb) / 1024, 1)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
 def make_handler(checker: Checker):
     class Handler(BaseHTTPRequestHandler):
         def _reply(self, code: int, body: dict) -> None:
@@ -111,7 +133,7 @@ def make_handler(checker: Checker):
         def do_GET(self):  # noqa: N802
             if self.path == "/health":
                 return self._reply(200, {"status": "ok", "loaded": checker.model is not None,
-                                         "device": checker.dev, "dtype": checker.dtype})
+                                         "device": checker.dev, "dtype": checker.dtype, **checker.memory()})
             self._reply(404, {"status": "error", "error": "not found"})
 
         def do_POST(self):  # noqa: N802
