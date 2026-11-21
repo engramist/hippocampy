@@ -132,19 +132,21 @@ def make_handler(checker: Checker):
 
         def do_GET(self):  # noqa: N802
             if self.path == "/health":
-                return self._reply(200, {"status": "ok", "loaded": checker.model is not None,
-                                         "device": checker.dev, "dtype": checker.dtype, **checker.memory()})
-            self._reply(404, {"status": "error", "error": "not found"})
+                self._reply(200, {"status": "ok", "loaded": checker.model is not None,
+                                  "device": checker.dev, "dtype": checker.dtype, **checker.memory()})
+            else:
+                self._reply(404, {"status": "error", "error": "not found"})
 
         def do_POST(self):  # noqa: N802
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
                 if self.path == "/check":
-                    return self._reply(200, checker.check(body["context"], body["question"], body["answer"]))
-                if self.path == "/release":
+                    self._reply(200, checker.check(body["context"], body["question"], body["answer"]))
+                elif self.path == "/release":
                     checker.release()
-                    return self._reply(200, {"status": "released", **checker.memory()})
-                self._reply(404, {"status": "error", "error": "not found"})
+                    self._reply(200, {"status": "released", **checker.memory()})
+                else:
+                    self._reply(404, {"status": "error", "error": "not found"})
             except Exception as e:  # the stage treats any non-ok/skipped reply as unavailable (fail-open)
                 self._reply(500, {"status": "error", "error": repr(e)[:300]})
 
