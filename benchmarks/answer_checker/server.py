@@ -11,7 +11,7 @@ reported as "skipped", which the stage escalates). Every path is passed as an ar
 Endpoints (JSON over POST unless noted):
   /check   {"context", "question", "answer"} -> {"status": "ok", "p_correct", "tokens", "latency_s", "load_s"}
                                               or {"status": "skipped", "error"}
-  /release {} -> {"status": "released"}: frees the weights (the next /check reloads them), so a larger answer
+  /release {} -> {"status": "released", <memory fields as /health>}: frees the weights (the next /check reloads them), so a larger answer
            model can run with nothing else resident (ND-18 amendment).
   /health  (GET) -> {"status": "ok", "loaded": bool, "device", "dtype", "mps_allocated_mb", "mps_driver_mb", "rss_mb"}
            (the memory fields are the evidence that /release frees the weights)
@@ -143,7 +143,7 @@ def make_handler(checker: Checker):
                     return self._reply(200, checker.check(body["context"], body["question"], body["answer"]))
                 if self.path == "/release":
                     checker.release()
-                    return self._reply(200, {"status": "released"})
+                    return self._reply(200, {"status": "released", **checker.memory()})
                 self._reply(404, {"status": "error", "error": "not found"})
             except Exception as e:  # the stage treats any non-ok/skipped reply as unavailable (fail-open)
                 self._reply(500, {"status": "error", "error": repr(e)[:300]})

@@ -29,7 +29,7 @@ class StubChecker:
             def do_POST(self):  # noqa: N802
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])) or b"{}")
                 outer.calls.append((self.path, body))
-                out = outer.reply if self.path == "/check" else {"status": "released"}
+                out = outer.reply if self.path == "/check" else {"status": "released", "rss_mb": 12.0}
                 data = json.dumps(out).encode()
                 self.send_response(200)
                 self.send_header("Content-Length", str(len(data)))
@@ -134,7 +134,10 @@ async def test_escalate_reanswers_the_same_messages_with_the_swap():
     assert mk.call_args[0][1:] == ("big", 8192)
     assert [p for p, _ in stub.calls] == ["/check", "/release"]
     assert unloads == ["small", "big"]  # first model out before, escalation model out after
-    assert set(meta["swap_s"]) >= {"release_checker_s", "unload_first_s", "escalation_answer_s", "unload_escalation_s"}
+    assert set(meta["swap_s"]) >= {"release_checker_s", "unload_first_s", "escalation_answer_s", "unload_escalation_s",
+                                   "window_start", "window_end"}
+    assert meta["swap_s"]["checker_memory"] == {"rss_mb": 12.0}
+    assert meta["swap_s"]["window_end"] >= meta["swap_s"]["window_start"]
     assert cap.call_args[0][1] == "second"  # capture writes the final answer only
 
 

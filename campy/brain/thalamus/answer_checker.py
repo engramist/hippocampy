@@ -66,14 +66,16 @@ def check_answer(url: str, context: str, question: str, answer: str, timeout: fl
     raise CheckerUnavailable(f"unexpected checker reply: {json.dumps(out)[:300]}")
 
 
-def release_checker(url: str, timeout: float) -> None:
-    """Ask the checker to free its weights (it reloads on the next /check)."""
+def release_checker(url: str, timeout: float) -> dict:
+    """Ask the checker to free its weights (it reloads on the next /check). Returns the server's reply, which
+    carries its memory after the release (the evidence that the weights are freed)."""
     try:
         out = _post_json(url.rstrip("/") + "/release", {}, timeout)
     except (urllib.error.URLError, OSError, ValueError) as exc:
         raise CheckerUnavailable(repr(exc)[:300]) from exc
     if out.get("status") != "released":
         raise CheckerUnavailable(f"unexpected release reply: {json.dumps(out)[:300]}")
+    return out
 
 
 def _ollama_host(config: dict) -> str:
@@ -157,11 +159,12 @@ async def apply_checker(answer: str, messages: list[dict], prompt: str, query: s
     llm_cfg = config.get("llm") or {}
     local = llm_cfg.get("provider", "ollama").lower() == "ollama"
     first_model = (llm_cfg.get("model") or "").strip()
-    swap: dict = {}
+    swap: dict = {"window_start": round(time.time(), 2)}  # wall clock, to line up with memory samples
     t = time.perf_counter()
     try:
-        await asyncio.to_thread(release_checker, url, timeout)
+        released = await asyncio.to_thread(release_checker, url, timeout)
         swap["release_checker_s"] = round(time.perf_counter() - t, 2)
+        swap["checker_memory"] = {k: v for k, v in released.items() if k != "status"} or None
         if local:
             if not first_model:
                 raise RuntimeError("[llm] model is not set, so the first answer model cannot be unloaded")
@@ -170,6 +173,7 @@ async def apply_checker(answer: str, messages: list[dict], prompt: str, query: s
             swap["unload_first_s"] = round(time.perf_counter() - t, 2)
     except (CheckerUnavailable, RuntimeError) as exc:
         _logger.warning("ND-18b: swap before escalation failed, keeping the first answer: %s", exc)
+        swap["window_end"] = round(time.time(), 2)
         rec["escalation_error"], rec["swap_s"] = f"swap: {exc}"[:300], swap
         return _done(answer)
 
@@ -196,5 +200,6 @@ async def apply_checker(answer: str, messages: list[dict], prompt: str, query: s
         except RuntimeError as exc:
             swap["unload_escalation_error"] = str(exc)[:300]
         swap["unload_escalation_s"] = round(time.perf_counter() - t, 2)
+    swap["window_end"] = round(time.time(), 2)
     rec["swap_s"] = swap
     return _done(final)
