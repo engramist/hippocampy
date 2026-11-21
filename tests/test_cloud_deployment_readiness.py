@@ -73,6 +73,11 @@ def test_every_documented_override_applies():
         "CAMPY_OBJECT_TEXT_MATCH": "1",
         "CAMPY_ANSWER_STYLE": "cite_answer",
         "CAMPY_ANSWER_BOUNDARY_PER_SECTION": "1",
+        "CAMPY_ANSWER_CHECKER": "1",
+        "CAMPY_ANSWER_CHECKER_URL": "http://checker:8765",
+        "CAMPY_ANSWER_CHECKER_THRESHOLD": "0.4",
+        "CAMPY_ANSWER_ESCALATION_MODEL": "big-model",
+        "CAMPY_ANSWER_ESCALATION_MAX_TOKENS": "4096",
         "CAMPY_QUESTION_ANALYSIS": "1",
         "CAMPY_GRAPH_VOTE": "1",
         "CAMPY_TURN_RERANK": "1",
@@ -108,6 +113,11 @@ def test_every_documented_override_applies():
     assert cfg["retrieval"]["graph_facts"] is True
     assert cfg["ask"]["answer_style"] == "cite_answer"
     assert cfg["answer"]["boundary_per_section"] is True
+    assert cfg["answer"]["checker"] is True
+    assert cfg["answer"]["checker_url"] == "http://checker:8765"
+    assert cfg["answer"]["checker_threshold"] == 0.4
+    assert cfg["answer"]["escalation_model"] == "big-model"
+    assert cfg["answer"]["escalation_max_tokens"] == 4096
     assert cfg["retrieval"]["object_text_match"] is True
     assert cfg["loop"]["entity_admission"] is True
     assert cfg["loop"]["entity_standing"] is True

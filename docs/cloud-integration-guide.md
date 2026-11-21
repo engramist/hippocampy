@@ -127,6 +127,11 @@ an error that names the variable. The full table is
 | `CAMPY_TURN_RERANK_PATH` | `[retrieval].turn_rerank_path` | empty (B578); the local folder holding the cross-encoder's ONNX files. Nothing is downloaded |
 | `CAMPY_TURN_RERANK_MODE` | `[retrieval].turn_rerank_mode` | `window` (B578, the default); `replace` keeps the section's turn count with the reranker's top turns (killed at its gate); `add` keeps every turn of the conversation section and adds the reranker's top 5 new turns, each with the section's neighbour window; `window` keeps the section's turn count, filled by the graph-vote turns and then the reranker's seeds, each with its neighbour window. Only read with `CAMPY_TURN_RERANK` on |
 | `CAMPY_ANSWER_BOUNDARY_PER_SECTION` | `[answer].boundary_per_section` | `1` puts one `<retrieved_memory>` boundary around each prompt section instead of one per line; lines, escaping and order are unchanged (ND-15, off by default) |
+| `CAMPY_ANSWER_CHECKER` | `[answer].checker` | `1` sends each answer, with its prompt and question, to the answer checker; an unsure answer is re-answered by the escalation model (ND-18b, off by default; checker unreachable keeps the first answer) |
+| `CAMPY_ANSWER_CHECKER_URL` | `[answer].checker_url` | base URL of the out-of-process checker server (`benchmarks/answer_checker/server.py`) |
+| `CAMPY_ANSWER_CHECKER_THRESHOLD` | `[answer].checker_threshold` | escalate when the checker's P(correct) is below this (default `0.5`) |
+| `CAMPY_ANSWER_ESCALATION_MODEL` | `[answer].escalation_model` | model that re-answers escalated questions; empty means no escalation |
+| `CAMPY_ANSWER_ESCALATION_MAX_TOKENS` | `[answer].escalation_max_tokens` | output cap for the escalation call (default `8192`; its hidden reasoning counts against it) |
 
 `CAMPY_HOME` sets where all state lives.
 

@@ -514,6 +514,12 @@ async def run_ask(
         # retries — same event-loop-blocking issue as the main call below.
         answer = await asyncio.to_thread(_h2_empty_claim_guard, answer, bundle, prompt, llm, meta)
 
+    # ND-18b: the answer checker (off by default). Below the threshold, or an input over the checker's limit, the
+    # same messages are re-answered by the escalation model; checker unreachable keeps this answer (fail-open).
+    from campy.brain.thalamus.answer_checker import apply_checker, checker_enabled
+    if checker_enabled(config):
+        answer = await apply_checker(answer, messages, prompt, query, config, meta)
+
     # 4. Capture (closed loop) — both the question and the answer
     if capture:
         await _capture_turn(query, answer, session_id, db, config)
