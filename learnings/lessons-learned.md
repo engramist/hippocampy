@@ -1170,3 +1170,24 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - Code scanning flagged mixed `return` styles in the server's handlers; rewritten as if/elif/else, same behaviour.
 - **Decision (review session):** merged. No score yet: the flag is off and nothing on the daemon changes. Before the full gate (job 1019), a memory smoke (job 1019a) runs 60 questions of conv-26 (40 from the 809, 20 from category 5) through the real stage with free memory sampled every 2 seconds. **Line:** the lowest free memory during any escalation at 14% or more queues 1019 as written; under 14%, or an escalation with no samples, holds it and the review session rules a fix (candidates: the checker process exits instead of releasing; a smaller context for the 26B).
 - **Lesson:** a tested swap order is not a measured one. The unit tests prove the order of the calls, not that the memory is free when the 26B loads, which is why the smoke reads the machine rather than the code.
+
+### 2026-11-22 ND-18b memory smoke (job 1019a, GPU, no score)
+- **Why:** in ND-18a the 26B alone ran at 13% free, one point above the 12% guard. The full gate (job 1019) adds the replay process (about 0.75 GB) and the swap between three models. The unit tests prove the order of the calls, not that memory is free when the 26B loads.
+- **What:** job 1019a (scripts in `~/campy-lead/scratch/nd18b/`; tree hc-nd18bgate at f17e2838, the ND-18b merge commit).
+  - 60 questions of conv-26 through the real stage: 40 from the 809 and 20 from category 5.
+  - The checker server ran in its own environment, the flag was on, and the personal daemon was stopped.
+  - Free memory was sampled every 2 s (`memory_pressure -Q`, 630 samples), and the checker's `/health` was saved at start and end.
+  - `smoke_analyze.py` takes the minimum free memory in each escalation's recorded window (start minus 2 s to end plus 2 s).
+- **Line (set before the run):** the lowest free memory during every escalation at 14% or more queues job 1019 as written. Under 14%, or an escalation with no samples, holds it for a fix ruled by the review session.
+- **Result:** 60 of 60 answered; 20 escalated (9 from the 809, 11 from category 5); no checker or replay errors; the escalation decision agreed with ND-17/ND-18a on 60 of 60; every escalation had samples (9 to 36 each). The job took 21 minutes.
+  - **Lowest free memory during an escalation: 15%** (conv-26_q27).
+    - 809 escalations: 15% to 25%.
+    - Category-5 escalations: 16% to 24%, with seven of the eleven at 16% or 17%.
+  - Swap timings per escalation:
+    - checker `/release` 0.14 to 0.21 s;
+    - 8B unload 0.05 to 0.11 s;
+    - 26B answer 13.7 to 67.9 s;
+    - 26B unload 0.08 to 0.28 s.
+  - After `/release` the checker held 0 MB of MPS memory (driver 1.6 MB) and about 430 to 590 MB of resident memory, against 331 MB before the first load.
+- **Decision (review session):** meets the line, so job 1019 is queued as written on hc-nd18bgate. The margin is thin (3 to 4 points over the guard on category 5), so a guard stop means no retry and the review session rules the fix.
+- **Lesson:** `/release` frees the checker's device memory but not its process memory (about 0.45 GB stays resident). The swap itself is fast (under half a second in total), so the cost of an escalation is the 26B's answer time, not the unloading. Category-5 escalations run closest to the guard, likely because their prompts are long.
