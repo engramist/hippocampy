@@ -1191,3 +1191,52 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - After `/release` the checker held 0 MB of MPS memory (driver 1.6 MB) and about 430 to 590 MB of resident memory, against 331 MB before the first load.
 - **Decision (review session):** meets the line, so job 1019 is queued as written on hc-nd18bgate. The margin is thin (3 to 4 points over the guard on category 5), so a guard stop means no retry and the review session rules the fix.
 - **Lesson:** `/release` frees the checker's device memory but not its process memory (about 0.45 GB stays resident). The swap itself is fast (under half a second in total), so the cost of an escalation is the 26B's answer time, not the unloading. Category-5 escalations run closest to the guard, likely because their prompts are long.
+
+### 2026-11-22 ND-18b gate: the answer checker as a stage, end to end (job 1019, GPU)
+- **Why:** the user chose option 2: the 8B answers, the checker accepts its answer or escalates the unsure ones to the 26B. ND-17 (the 809) and ND-18a (category 5) were offline reads of stored prompts. This is the stage itself, through `run_ask`.
+- **What:** job 1019 (scripts in `~/campy-lead/scratch/nd18b/`; tree hc-nd18bgate at f17e2838, the ND-18b merge commit).
+  - The 809 and the 222 were replayed on the s4p stores with window mode on and 1011's settings, `[answer] checker` on (threshold 0.5, skipped inputs escalate) and the 26B as escalation model (output cap 8,192).
+  - The checker ran out of process. The swap kept one answer model in memory at a time, and the personal daemon was stopped.
+  - Control: the same run's unchecked 8B answers. The judge was the 26B with 3 votes, and its verdicts were reused from the cache where the answer text matched 1011's.
+  - It took 5 h 25 min.
+- **Lines (set before the run, RUNS.md):**
+  - **Pass:** above +1.9 points on the 809, with category-5 correct abstention down at most 5.
+  - **Kill:** 0 or below on the 809, or category 5 down more than 10. Between: the review session's call.
+  - **Invalid:** checker errors over 1%; unchecked answers byte-equal to 1011's under 95%; the escalation set matching ND-17/ND-18a under 95%.
+  - **Hand check:** 30 random escalated wrong-to-right answers read against the key; under 24 of 30 agreeing holds the result.
+  - **Prediction:** +2.5 to +4.5 points.
+- **Result:** valid: no checker or replay errors; all 1,031 unchecked answers equal 1011's; the escalation set matches ND-17/ND-18a on 1,031 of 1,031.
+  - **The 809: 61.1% (494) against 56.7% (459), +4.3 points**, net +35 questions (52 gained, 17 lost); 176 escalated (21.8%).
+  - The control is 2 questions above 1011's 56.5% (457), though all 809 unchecked answers equal 1011's byte for byte. The two differences are conv-26_q124 and conv-50_q58: 1011 recorded `judge_unparseable` for them (scored wrong), and this run's judge passed both. The lines are read against the same-run control (+4.3); against 1011 the policy is +4.6.
+  - By category:
+    - multi-hop: 29.4% against 29.4% (+0.0);
+    - temporal: 66.1% against 53.2% (+12.9);
+    - open-domain: 39.2% against 47.1% (-7.8; n=51, net -4);
+    - single-hop: 72.8% against 68.9% (+3.9).
+  - **Category 5:** correct abstention 73.0% against 55.9% (+17.1); 132 escalated (59.5%). ND-18a's numbers are reproduced exactly through the real stage.
+  - **Escalation:**
+    - 308 of 1,031 (29.9%).
+    - 5 empty 26B answers, where the 8B answer was kept by design (conv-41_q85, conv-48_q140, conv-49_q24, conv-49_q144, conv-50_q46).
+    - Swap median 0.32 s (p90 0.40, max 0.71).
+    - 26B answer median 22 s.
+    - Checker reload median 2.9 s (309 reloads, one per escalation).
+  - **Memory: a near-miss.** There was no guard stop, but the run came within one check of one.
+    - The memory guard's 30 s log showed free memory at 9% at 22:03:51, 11% at 22:04:21, then 12%. That was during the escalation of conv-26_q42, where the 26B (about 17.8 GB loaded) wrote 3,985 tokens over 131 s, and swap went from 1.0 to 3.5 GB.
+    - That is 2 consecutive checks under the 12% line; the guard stops on the 3rd.
+    - Over the whole run, 3 of 653 samples were under 14%, so the smoke's 15% minimum did not hold over 308 escalations. Swap ended at about 5 GB.
+  - **Lines:** pass (+4.3 > +1.9; category 5 up 17.1).
+  - **Hand check (review session): 29 of 30 agree with the key** (line: under 24 holds the result). 30 of the 52 escalated wrong-to-right answers were sampled (`handcheck.json`, seed 18).
+    - The one doubtful item is conv-49_q12: the key says "a few days before" the session date, and the 26B said "around mid-May".
+    - The list answers (items 6, 20 and 28) cover every key item. The result stands.
+- **Ruling (review session):** passes both lines and all three validity checks; the prediction (+2.5 to +4.5) is met.
+  - **Not shipped:** `[answer] checker` stays off by default.
+  - Per the user (2026-11-22), nothing is queued and the direction/GPU delegation is paused; the next phase goes to a different agent.
+  - Turning the checker on is the user's call, with three open items:
+    - a second, independent sample: this is one measurement on the 809, and the lever was chosen on these questions;
+    - the cost: the 26B on about 30% of questions, about 22 s each plus a checker reload of about 3 s;
+    - memory: the run came one check from a guard stop with the 26B as the only model resident, so the personal daemon cannot run it alongside other work as it stands.
+- **Lesson:**
+  - The offline reads predicted the stage exactly. ND-17's +4.2 against the 8B alone became +4.3 end to end, and ND-18a's +17.1 on category 5 came out the same.
+  - So for a stage that changes only the answer, a stored-prompt read is a sound cheap proxy, provided the stage's inputs match byte for byte (100% here).
+  - The gain sits in temporal and single-hop; multi-hop is flat, where the checker is blind (AUC 0.52). Open-domain loses 7.8 points because the 26B is worse there, so a per-category rule could keep that gain. That would be a new lever, fitted on these questions, and needs held-out data.
+  - On memory, the swap is cheap, but a 60-question smoke did not bound the worst case. It saw 15% at the lowest; the full run hit 9% on one long answer. Long 26B outputs press the guard: the KV cache grows with the answer, so the output cap matters for headroom as well as for time. A smoke sized to the run's escalation count, or the longest outputs, would have caught it.
