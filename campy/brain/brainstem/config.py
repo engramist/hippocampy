@@ -249,6 +249,15 @@ _DEFAULT_CONFIG = {
     # ND-15: one B339 data boundary per prompt section instead of one per line (off by default).
     "answer": {
         "boundary_per_section": False,
+        # ND-18b: an out-of-process answer checker gives P(the answer is correct); below the threshold (or an input
+        # over the checker's limit) the same messages are re-answered by the escalation model. Off by default;
+        # checker unreachable keeps the first answer (fail-open). Empty escalation_model means no escalation.
+        "checker": False,
+        "checker_url": "http://127.0.0.1:8765",
+        "checker_threshold": 0.5,
+        "checker_timeout_seconds": 120,
+        "escalation_model": "",
+        "escalation_max_tokens": 8192,
     },
     # B494: output-token cap on every LLM call, so a runaway generation
     # cannot run until the request timeout. 0 = no cap.
@@ -337,6 +346,13 @@ def _parse_nonneg_int(raw: str) -> int:
 CONVERSATION_BUDGET_MODES = ("fit_all", "fill")
 
 
+def _parse_unit_float(raw: str) -> float:
+    value = float(raw)
+    if not 0.0 <= value <= 1.0:
+        raise ValueError(f"expected a number in [0, 1], got {raw!r}")
+    return value
+
+
 def _parse_budget_mode(raw: str) -> str:
     value = raw.strip().lower()
     if value not in CONVERSATION_BUDGET_MODES:
@@ -369,6 +385,12 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_ANSWER_STYLE": ("ask", "answer_style", str),
     # ND-15: one B339 boundary per prompt section (off by default).
     "CAMPY_ANSWER_BOUNDARY_PER_SECTION": ("answer", "boundary_per_section", _parse_bool),
+    # ND-18b: the answer checker stage and its escalation (off by default).
+    "CAMPY_ANSWER_CHECKER": ("answer", "checker", _parse_bool),
+    "CAMPY_ANSWER_CHECKER_URL": ("answer", "checker_url", str),
+    "CAMPY_ANSWER_CHECKER_THRESHOLD": ("answer", "checker_threshold", _parse_unit_float),
+    "CAMPY_ANSWER_ESCALATION_MODEL": ("answer", "escalation_model", str),
+    "CAMPY_ANSWER_ESCALATION_MAX_TOKENS": ("answer", "escalation_max_tokens", _parse_nonneg_int),
     # Object-text matching: question words matched by vector to the object text of the subject's facts (graph_facts).
     "CAMPY_OBJECT_TEXT_MATCH": ("retrieval", "object_text_match", _parse_bool),
     # B547: the question is analysed once; stages read the analysis (bundle section `reads`, `bundle.analysis`).
