@@ -237,7 +237,7 @@ Ruled by the user ("Close B542"), after the B542 screens.
   - **ND-18a outcome (2026-11-21): pass.** The checker escalated 59.5% of category 5; the 26B declined 94.7% of those, so correct abstention rose from 55.9% to 73.0% (+17.1). ND-18b goes ahead, with only one model in memory while the 26B answers (it ran at 13% free alone).
   - **ND-18b code (2026-11-21): merged, off by default** (PR 523). A 60-question memory smoke runs first (line: at least 14% free during every escalation); the full gate on the 809 and the 222 follows only if it holds.
   - **Memory smoke (job 1019a, 2026-11-22): held** (lowest free 15% during an escalation, line 14%).
-  - **ND-18b gate (job 1019, 2026-11-22): passes its lines, pending the hand check.** The 809: 61.1% against 56.7% (+4.3 points); category 5 +17.1. The offline reads (ND-17, ND-18a) predicted the stage exactly. The flag stays off by default.
+  - **ND-18b gate (job 1019, 2026-11-22): passes its lines; hand check 29 of 30 agree with the key (line 24).** The 809: 61.1% against 56.7% (+4.3 points); category 5 +17.1. The offline reads (ND-17, ND-18a) predicted the stage exactly. The flag stays off by default.
 
 ## Paused, 2026-11-22 (the user)
 

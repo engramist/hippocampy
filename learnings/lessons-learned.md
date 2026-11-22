@@ -1207,7 +1207,7 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - **Prediction:** +2.5 to +4.5 points.
 - **Result:** valid: no checker or replay errors; all 1,031 unchecked answers equal 1011's; the escalation set matches ND-17/ND-18a on 1,031 of 1,031.
   - **The 809: 61.1% (494) against 56.7% (459), +4.3 points**, net +35 questions (52 gained, 17 lost); 176 escalated (21.8%).
-  - The control is 2 questions above 1011's 56.5% (457) on the same answer text: two cached verdicts (conv-26, conv-50) differ from those 1011 was scored with. Against 1011 the policy is +4.6. Both pass.
+  - The control is 2 questions above 1011's 56.5% (457) on the same answer text: two cached verdicts differ from those 1011 was scored with: conv-26_q124 and conv-50_q58 were `judge_unparseable` in 1011 (scored wrong) and passed in this run's judging. Against 1011 the policy is +4.6. Both pass.
   - By category:
     - multi-hop: 29.4% against 29.4% (+0.0);
     - temporal: 66.1% against 53.2% (+12.9);
@@ -1221,8 +1221,8 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
     - 26B answer median 22 s.
     - Checker reload median 2.9 s (309 reloads, one per escalation).
   - **Memory:** no guard stop. The memory guard's 30 s log shows free memory at 13% or more, except one dip to 9% at the escalation of conv-26_q42, where the 26B wrote 3,985 tokens over 131 s. That dip lasted two checks, under the guard's three.
-  - **Lines:** pass (+4.3 > +1.9; category 5 up 17.1). The hand check (30 of 52 escalated wrong-to-right, `handcheck.json`, seed 18) is the review session's reading and is pending.
-- **Decision:** passes its lines, pending the hand check. Per the user (2026-11-22): `[answer] checker` stays off by default, and no second sample or follow-up is queued. The direction/GPU delegation is paused, and the next phase goes to a different agent. The default is the user's call, on a second independent sample and the daemon's cost: a 26B swap for about 30% of questions, at about 22 s each.
+  - **Lines:** pass (+4.3 > +1.9; category 5 up 17.1). The hand check (30 of 52 escalated wrong-to-right, `handcheck.json`, seed 18) was read by the review session: **29 of 30 agree** with the key (line: under 24 holds), so the result stands. The one doubtful item is conv-49_q12, where the key says "a few days before" the session date and the 26B said "around mid-May"; the list items (conv-26_q32, conv-41_q52, conv-48_q39) cover every key item.
+- **Decision (review session):** passes its lines and the hand check. Not shipped. Per the user (2026-11-22): `[answer] checker` stays off by default, and no second sample or follow-up is queued. The direction/GPU delegation is paused, and the next phase goes to a different agent. The default is the user's call, on a second independent sample and the daemon's cost: a 26B swap for about 30% of questions, at about 22 s each.
 - **Lesson:**
   - The offline reads predicted the stage exactly. ND-17's +4.2 against the 8B alone became +4.3 end to end, and ND-18a's +17.1 on category 5 came out the same.
   - So for a stage that changes only the answer, a stored-prompt read is a sound cheap proxy, provided the stage's inputs match byte for byte (100% here).
