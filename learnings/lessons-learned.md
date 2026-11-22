@@ -1156,3 +1156,17 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - Overall escalation including category 5 is 308 of 1,031 (29.9%), not 21.8%, so the cost estimate for the stage must count it.
   - The 26B alone uses nearly all the headroom on this machine, so any stage that calls it must free the other models first.
 
+### 2026-11-21 ND-18b code: the checker as a flagged pipeline stage (PR 523, tests only)
+- **Why:** ND-18a passed (+17.1 points of correct abstention on category 5), so ND-18b's code went ahead as the Rulings row "ND-18" specifies, amended for memory: nothing else may be resident while the 26B answers.
+- **What:** PR 523 (the plan lead; merged as f17e2838).
+  - `[answer] checker` (off by default), `checker_url`, `checker_threshold = 0.5`, `checker_timeout_seconds`, `escalation_model` and `escalation_max_tokens = 8192`, with env overrides.
+  - In `run_ask`, after the answer and H2, `campy/brain/thalamus/answer_checker.py` sends prompt, question and answer to the checker. Below the threshold, or a skipped input, the same messages are re-answered by the escalation model. An unreachable checker keeps the first answer (fail-open).
+  - The swap: the checker frees its weights (`/release`), the first model is unloaded and the stage waits until Ollama no longer lists it, then the 26B answers and is unloaded. A failed swap keeps the first answer; the escalation never runs with two models resident.
+  - `meta` records the unchecked answer, P, the decision, both usages and the time of each swap step, with wall-clock start and end so the swap can be lined up with memory samples.
+  - The checker runs out of process (`benchmarks/answer_checker/server.py`, its own environment, ND-17's wording); campy imports no torch.
+- **Lines (set before the code):** flag off byte-identical (same messages, answer, meta and capture, checker never contacted); accept, escalate (with the swap order), skipped escalates, checker down keeps, failed swap keeps; no torch import; full suite green.
+- **Result:** all of these pass in `tests/test_nd18b_answer_checker.py`; full suite 4,747 passed, 43 skipped, 2 xfailed; CI green.
+  - The review session asked for four changes before merging: `/health` and `/release` report the checker's memory, so the gate can show `/release` really frees it; the wait for an unload compares an untagged name as `name:latest`, as Ollama lists it (without this the wait could pass without checking); the swap's wall-clock window is recorded; the PR's score-effect section gains its prediction.
+  - Code scanning flagged mixed `return` styles in the server's handlers; rewritten as if/elif/else, same behaviour.
+- **Decision (review session):** merged. No score yet: the flag is off and nothing on the daemon changes. Before the full gate (job 1019), a memory smoke (job 1019a) runs 60 questions of conv-26 (40 from the 809, 20 from category 5) through the real stage with free memory sampled every 2 seconds. **Line:** the lowest free memory during any escalation at 14% or more queues 1019 as written; under 14%, or an escalation with no samples, holds it and the review session rules a fix (candidates: the checker process exits instead of releasing; a smaller context for the 26B).
+- **Lesson:** a tested swap order is not a measured one. The unit tests prove the order of the calls, not that the memory is free when the 26B loads, which is why the smoke reads the machine rather than the code.

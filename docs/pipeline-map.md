@@ -125,7 +125,9 @@ The local answer model; cite or abstain (M1.3). B539: the harness counts some an
 non-answers that the judge never sees. Status: mixed (B539 open).
 Measured limit (ND-16, 2026-11-21): on the same stored prompts the 26B scores +9.0 points over the 8B and
 gets 60.6% of the in-view misses right, so the reader is the main limit there; the answer model is the
-user's open decision (see ARCHITECTURE.md, Open Research Questions).
+user's open decision (see ARCHITECTURE.md, Open Research Questions). The user chose the 8B plus a checker
+(2026-11-21): `[answer] checker` (off by default, `campy/brain/thalamus/answer_checker.py`) sends each answer to an
+out-of-process 2B decision model and re-answers the unsure ones with the 26B; its end-to-end gate is ND-18b.
 
 ## The principled profile (to be assembled)
 
