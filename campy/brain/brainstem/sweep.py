@@ -269,6 +269,18 @@ async def run_sweep(db, config: dict, llm_client: Optional[object]) -> dict:
             _logger.warning("[Sweep] Vocabulary steward failed", exc_info=True)
             summary["errors"] += 1
 
+        # Step 7.7: Evergreen SKOS taxonomy sweep (flag [observations] evergreen_taxonomy, default off):
+        # links untyped Concepts/ObjectPhrases to singular kinds and walks WordNet BROADER chains up to ceiling.
+        try:
+            from campy.brain.hippocampus import evergreen_taxonomy
+
+            if evergreen_taxonomy.evergreen_taxonomy_enabled(config):
+                tax_stats = await evergreen_taxonomy.sweep_store_taxonomy(db, config=config)
+                summary["evergreen_taxonomy"] = tax_stats.as_dict()
+        except Exception:
+            _logger.warning("[Sweep] Evergreen taxonomy failed", exc_info=True)
+            summary["errors"] += 1
+
         return summary
     finally:
         set_phase("idle")

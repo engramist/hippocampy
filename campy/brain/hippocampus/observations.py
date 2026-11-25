@@ -182,6 +182,12 @@ def observations_supersede_enabled(config: dict | None) -> bool:
     return bool(((config or {}).get("observations") or {}).get("supersede", False))
 
 
+def evergreen_taxonomy_enabled(config: dict | None) -> bool:
+    """`[observations] evergreen_taxonomy` (default FALSE; env `CAMPY_EVERGREEN_TAXONOMY=1` turns it on):
+    normalize object/kind labels to singular lemmas, link INSTANCE_OF, and walk WordNet BROADER up to ceiling."""
+    return bool(((config or {}).get("observations") or {}).get("evergreen_taxonomy", False))
+
+
 def observation_limit(config: dict | None, default: int = 8) -> int:
     """`[observations] observation_limit`: most Observations the semantic section carries."""
     try:
@@ -513,6 +519,22 @@ async def record_observation(
             _logger.warning("[Observations] attribute property failed for %s", oid[:8], exc_info=True)
     elif supersede and draft.predicate == "has_attribute" and draft.polarity == "asserted":
         await _supersede_attributes(gw, oid, draft, msg, now)
+    if evergreen_taxonomy_enabled(config) and draft.object_id and draft.object_id != draft.subject_id:
+        try:
+            from campy.brain.hippocampus.evergreen_taxonomy import enrich_concept_inline
+
+            await enrich_concept_inline(
+                gw,
+                draft.object_id,
+                draft.object_text,
+                config=config,
+            )
+        except Exception:
+            _logger.warning(
+                "[Observations] evergreen_taxonomy inline enrichment failed for %s",
+                oid[:8],
+                exc_info=True,
+            )
     return WriteResult("created", oid)
 
 
