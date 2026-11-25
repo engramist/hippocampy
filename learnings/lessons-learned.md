@@ -1240,3 +1240,24 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - So for a stage that changes only the answer, a stored-prompt read is a sound cheap proxy, provided the stage's inputs match byte for byte (100% here).
   - The gain sits in temporal and single-hop; multi-hop is flat, where the checker is blind (AUC 0.52). Open-domain loses 7.8 points because the 26B is worse there, so a per-category rule could keep that gain. That would be a new lever, fitted on these questions, and needs held-out data.
   - On memory, the swap is cheap, but a 60-question smoke did not bound the worst case. It saw 15% at the lowest; the full run hit 9% on one long answer. Long 26B outputs press the guard: the KV cache grows with the answer, so the output cap matters for headroom as well as for time. A smoke sized to the run's escalation count, or the longest outputs, would have caught it.
+
+### 2026-11-24 Full 5-Conversation Pilot v2 Capture + Step Q + 809/Cat-5 GPU Gate (`task-299` & `task-322`)
+- **Why:** After ND-13 (809/809 exact fidelity; 73/159 misses are cat-1 multi-hop) and `bridge_809` (stopped offline over `s4p`'s noun-chunk graph), our `conv-26` Pilot v2 achieved 4.0% blind triple error (2/50), 82.9% non-attr `HAS_OBJECT -> Concept`, 2.7× pure-SPARQL Step Q hits (16 → 43), and 66.5% stacked with ND-18b (+9.4 pts multi-hop). We scaled Pilot v2 capture (`num_ctx=4096`) to all 5 conversations and ran the full 809 + Category-5 (222) end-to-end gate (`pv2on` / `pv2c5on`) against Claude's `b18on` (`61.1%`).
+- **What:** `pilot_conv26.py` (`gemma4:26b`, `think=False`, `num_ctx=4096`, 3-turn coreference context, closed entity list, P8 person-anchored subjects, stripped image captions, speaker alias merging, SHACL validation) across all 5 stores (`~/campy-lead/scratch/capture_pilot_v2/store_*`), followed by `qh.py` Step Q on all 5 stores, then `replay_arm_nd18b.py` + 26B 3-vote `judge_arm.py` (`pv2on_*`, `pv2c5on_*`; `CAMPY_GRAPH_FACTS` off). Control: `b18on_*` / `b18c5on_*` (job 1019).
+- **Lines (pre-registered):** pass > +1.9 pts over `b18on` (`> 63.0%` on 809) with category-5 abstention down ≤ 5 pts; kill ≤ 0 pts vs. `b18on` or category-5 down > 10 pts.
+- **Result:**
+  - **Capture & Step Q across all 5 stores (`n=809`):**
+    - Total live Observations: **3,342**; non-attribute `HAS_OBJECT -> Concept`: **76.3% (2,084/2,730)** vs. ~6% on 8B (**12.7× jump**; range 69.4%–83.5%).
+    - Pure-SPARQL Step Q `HIT`s (zero vectors, zero object-text): **275 / 809 (34.0%)** (+40 `too_broad` = 38.9% reached) vs. **111 / 809 (13.7%)** on `s4p` (**2.5× / +148% jump**). `gold_fact_object_is_text` dropped 216 → 53 (-75%); `no_fact_on_gold_turn` 79 → 38 (-52%); `gold_fact_without_subject_edge` 90 → 47 (-48%). Remaining #1 gap: `gold_object_not_reached_from_named_concept` = **221 / 809 (27.3%)** (taxonomy/ontology gap).
+  - **End-to-end 809 + Category-5 Gate (`pv2on` vs. `b18on`):**
+    - **Overall 809:** **60.1% (486/809)** vs. `b18on` **61.1% (494/809)** — **-1.0 pts** (net -8: gained 69, lost 77; inside ±1.7 pt noise; **hit kill line ≤ 0**). Escalated 205/809 (25.3%), 0 checker errors, 7 escalation errors.
+    - **By category (`pv2on` vs. `b18on`):**
+      - **Multi-hop (`n=153`):** **34.6% (53)** vs. `29.4% (45)` — **+5.2 pts (+8 net)** across all 5 conversations.
+      - **Open-domain (`n=51`):** **41.2% (21)** vs. `39.2% (20)` — **+2.0 pts (+1)**.
+      - **Temporal (`n=171`):** `64.9% (111)` vs. `66.1% (113)` — `-1.2 pts (-2)`.
+      - **Single-hop (`n=434`):** `69.4% (301)` vs. `72.8% (316)` — **-3.4 pts (-15 net)**.
+    - **Per conversation (`pv2on` vs. `b18on`):** `conv-26` +1, `conv-41` +0, `conv-48` -6, `conv-49` -4, `conv-50` +1.
+    - **Category-5 correct abstention (`n=222`):** **78.4% (174/222)** vs. `b18c5on` **73.0% (162/222)** (**+5.4 pts**; unchecked 8B rose from `55.9%` to `62.2%`, **+6.3 pts**).
+    - **Abstentions on 809:** `139` vs. `122` (+17 more refusals on `pv2on`).
+- **Decision:** **KILL on overall 809 (`-1.0 pts ≤ 0`); do not flip default.** Keep the 5 Pilot v2 stores as our verified graph substrate — they proved a **+5.2 pt multi-hop win** and **+5.4 pt cat-5 abstention win** while isolating the single-hop regression (`-15` questions / `+17` refusals, concentrated in `conv-48` and `conv-49`).
+- **Lesson:** (1) `num_ctx=4096` eliminated 26B KV-cache memory guard stops across 2,800+ turns. (2) Entity-resolved typed capture delivers a consistent **+5.2 pt multi-hop gain** across all 5 conversations where reader escalation was flat (+0.0). (3) Stripping image captions and non-person Observations traded single-hop recall (-15) for higher abstention (+17 refusals on 809, +12 on cat-5). Next levers: inspect the 15 single-hop losses on `conv-48`/`conv-49` (zero GPU, stored prompts) and build the evergreen SKOS taxonomy pipeline (`221` remaining Step Q misses).

@@ -2,7 +2,7 @@
 
 Live state of `e2e-improvement-plan.md`. One entry per step result; earlier history is in git and the dated notes.
 
-_Last updated: 2026-11-22 (ND-18b's gate, job 1019: +4.3 points on the 809, category 5 +17.1, passes; hand check 29 of 30; not shipped, the checker's default is the user's call; the direction/GPU delegation is paused by the user)_
+_Last updated: 2026-11-24 (Full 5-conv Pilot v2 26B capture + 809/cat-5 gate complete: 76.3% `HAS_OBJECT`, 2.5× pure-SPARQL Step Q hits 111→275/809; end-to-end `pv2on` 60.1% vs. `b18on` 61.1% [-1.0 pts, kill on overall], with Multi-Hop +5.2 pts [29.4%→34.6%] and Cat-5 abstention +5.4 pts [73.0%→78.4%], offset by Single-Hop -3.4 pts [-15] from +17 refusals)_
 
 ## Scoreboard (one test set, one measure)
 
@@ -37,6 +37,7 @@ run's own control (the same stores without the change). Noise is ±1.7 points; a
 | ND-16 ceiling read: the 26B reads 1011's stored prompts (2026-11-20, job 1016b) | 65.5% (530) | +9.0 against the control above (same prompts, only the reader changed) | **reader is the main limit** (line: 50%+ of the 160 in-view misses right; 60.6%); gained 117, lost 44; 15 still capped (+9.6 without); not a shippable arm | | |
 | ND-17 answer checker: escalate the unsure 8B answers to the 26B's ND-16 answer (2026-11-21, job 1017, stored verdicts) | 60.7% (491) | +2.2 against same-rate random escalation (58.5%); +4.2 against the 8B alone | **pass** (line: more than +1.9 over random with at most 50% escalated); 21.8% escalated; AUC 0.79; category 5 unmeasured; not a shippable arm | | |
 | ND-18b checker stage, end to end (job 1019, 2026-11-22) | 61.1% (494) | +4.3 against the same run's unchecked 8B (56.7%) | **pass; not shipped** (off by default, user's call); gained 52, lost 17; category-5 correct abstention +17.1; hand check 29 of 30 | | |
+| Pilot v2 26B capture + ND-18b checker, all 5 stores (`task-322`, 2026-11-24) | 60.1% (486) | -1.0 against `b18on` (61.1%); +3.4 against `b18un` (56.7%) | **killed on overall** (line `<= 0` vs `b18on`); gained 69, lost 77; **multi-hop +5.2** (29.4%→34.6%), **cat-5 +5.4** (73.0%→78.4%), **single-hop -3.4** (-15, +17 refusals); pure-SPARQL Step Q 275/809 (2.5×) | | |
 | Changed abstain instruction (2026-11-17) | 60.0% (485) | +6.3 against 53.6% | killed: refusals on the 222 adversarial questions fell 27.1 points (line 10) | 13.3 | +0.6 |
 
 The judge score is the headline because token F1 fails correct paraphrases and long answers. Our cite answers add the quoted line (median 37 words against a 4-word key), so F1 here mostly measures answer length. F1 is shown so these numbers can be set beside the LoCoMo paper's. It was computed from the stored answers with the harness's `locomo10.scoring.locomo_f1`, unchanged. That function mirrors the official evaluation: it lowercases, drops commas, punctuation and a/an/the/and, Porter-stems, and takes token-overlap F1. Category 1 scores each gold item against the best of the comma-split answer, and category 3 uses the first gold alternative. F1 changes are within the F1 column only. How our judge differs from the published judges: `learnings/judge-comparison.md`.
