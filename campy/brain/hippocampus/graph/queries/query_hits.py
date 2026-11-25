@@ -14,6 +14,8 @@ Reads:
                                      label (the `_in_sessions` form keeps to the given Sessions)
   query_hits.objects                 the other Concepts named by a term (label or altLabel), not action kinds, that a
   query_hits.objects_in_sessions     turn MENTIONS or a fact's object reaches by INSTANCE_OF / BROADER*
+  query_hits.selective_objects       same as query_hits.objects, anchored on the subject's live facts and keeping only
+  query_hits.selective_objects_in_sessions  Concepts with 1..max_facts live facts (drops over-broad hubs in SPARQL)
   query_hits.relation_subject        a person named by relation of the subject ("Nora's kids"): the relation
                                      Concepts RELATION_OF the subject whose relation_label is a question term
   query_hits.facts                   the subject's live facts whose HAS_OBJECT is K, an instance of K, or narrower,
@@ -128,6 +130,28 @@ def _objects_sparql(scoped: bool) -> str:
             """
 
 
+def _selective_objects_sparql(scoped: bool) -> str:
+    scope = _IN_SESSIONS if scoped else ""
+    return f"""
+            SELECT ?kid (COUNT(DISTINCT ?o) AS ?n) WHERE {{
+              VALUES ?term {{ }}
+              {{ ?k campy:text_raw ?term }} UNION {{ ?k campy:HAS_ALT_LABEL ?_l . ?_l campy:text ?term }}
+              ?k a campy:Concept ; campy:concept_id ?kid .
+              FILTER(?kid != ?sid && STRLEN(?term) > 2)
+              FILTER NOT EXISTS {{ ?k campy:kind_scheme "action" }}
+              FILTER NOT EXISTS {{ ?k campy:archived true }}
+              ?x (campy:INSTANCE_OF|campy:BROADER)* ?k .
+              ?o a campy:Observation ; campy:HAS_OBJECT ?x ; campy:EVIDENCED_BY ?m .
+              {{ ?o campy:HAS_SUBJECT ?_s . ?_s campy:concept_id ?sid }} UNION {{ ?o campy:subject_id ?sid }}
+              {scope}
+              {_LIVE_FACT}
+            }}
+            GROUP BY ?kid
+            HAVING (COUNT(DISTINCT ?o) <= MAX(?max_facts))
+            ORDER BY ?n ?kid
+            """
+
+
 # The subject's live facts: those whose object ?x is K, an instance of K, or an instance of a kind narrower than K
 # (the kids branch, which binds ?x), together with those whose own `object_text` is one of the given texts (the text
 # branch, which leaves ?x unbound; the projection tail binds it from the fact when it has an object Concept). With
@@ -209,6 +233,28 @@ QUERY_HIT_QUERIES = [
         mutating=False,
         description="query_hits.objects kept to the turns SENT_IN the given Session IRIs",
         sparql=_objects_sparql(scoped=True),
+    ),
+    NamedQuery(
+        name="query_hits.selective_objects",
+        cypher=("MATCH (o:Observation {subject_id: $sid})-[:HAS_OBJECT]->(x)-[:INSTANCE_OF|BROADER*0..]->(k:Concept) "
+                "WHERE k.text_raw IN $terms AND k.concept_id <> $sid AND o.archived = false "
+                "WITH k, count(DISTINCT o) AS n WHERE n <= $max_facts RETURN k.concept_id AS kid, n ORDER BY n, kid"),
+        params=("terms", "sid", "max_facts"),
+        mutating=False,
+        description=("Specificity-first object Concepts for the subject: keeps only Concepts whose subject-scoped "
+                     "live-fact count is in 1..max_facts (drops over-broad hubs in SPARQL via GROUP BY / HAVING)"),
+        sparql=_selective_objects_sparql(scoped=False),
+    ),
+    NamedQuery(
+        name="query_hits.selective_objects_in_sessions",
+        cypher=("MATCH (o:Observation {subject_id: $sid})-[:HAS_OBJECT]->(x)-[:INSTANCE_OF|BROADER*0..]->(k:Concept), "
+                "(o)-[:EVIDENCED_BY]->(m:Message)-[:SENT_IN]->(s:Session) "
+                "WHERE s IN $sessions AND k.text_raw IN $terms AND k.concept_id <> $sid AND o.archived = false "
+                "WITH k, count(DISTINCT o) AS n WHERE n <= $max_facts RETURN k.concept_id AS kid, n ORDER BY n, kid"),
+        params=("terms", "sid", "sessions", "max_facts"),
+        mutating=False,
+        description="query_hits.selective_objects kept to the turns SENT_IN the given Session IRIs",
+        sparql=_selective_objects_sparql(scoped=True),
     ),
     NamedQuery(
         name="query_hits.relation_subject",

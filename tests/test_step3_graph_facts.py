@@ -108,3 +108,26 @@ async def test_compile_bundle_uses_graph_facts_instead_of_graph_count(db, gw):
     on = await compile_bundle(PETS, db, {"retrieval": {**base["retrieval"], "graph_facts": True}})
     types = [s.section_type for s in on.sections]
     assert "graph_facts" in types and "graph_count" not in types
+
+
+async def test_selective_objects_flag_and_broad_hub_filtering(db, gw, monkeypatch):
+    from campy.brain.brainstem.config import _DEFAULT_CONFIG, apply_env_overrides
+
+    assert _DEFAULT_CONFIG["retrieval"]["graph_facts_selective_objects"] is False
+    assert not gf.selective_objects_enabled(_DEFAULT_CONFIG)
+    cfg = apply_env_overrides({"retrieval": {}}, environ={"CAMPY_GRAPH_FACTS_SELECTIVE_OBJECTS": "1"})
+    assert gf.selective_objects_enabled(cfg)
+
+    _, facts = await build(db, gw)
+    # Question matches both c-guitar (1 live fact) and k-pet (2 live facts); union = 3 facts.
+    # With MAX_FACTS=1, default union is too_broad (None), while selective_objects drops k-pet in SPARQL
+    # and returns the 1-fact section for c-guitar.
+    q = "Did Nora buy a guitar for her pets?"
+    monkeypatch.setattr(gf, "MAX_FACTS", 1)
+    assert await gf.build_graph_facts_section(db, q, ON, analysis=shape("yes_no")) is None
+    sec = await gf.build_graph_facts_section(
+        db, q, {"retrieval": {"graph_facts": True, "graph_facts_selective_objects": True}}, analysis=shape("yes_no"),
+    )
+    assert sec is not None
+    assert sec.source_node_ids == [facts["guitar"]]
+    assert "guitar" in sec.content[0]["text"]

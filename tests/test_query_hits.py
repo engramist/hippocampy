@@ -217,3 +217,24 @@ async def test_role_targets_are_the_subjects_roles(db, gw):
     rows = await gw.run("facts.by_action_kind", sid="c-nora", kid="wn:adoption.n.01")
     assert [(r["observation_id"], r["evidence_message_id"]) for r in rows] == [
         (facts["biscuit"], mids["adopt"]), (facts["mochi"], mids["mochi"])]
+
+
+async def test_selective_objects_drops_broad_hubs_in_sparql(db, gw):
+    await build(db, gw)
+    terms = [t for t, _ in question_terms("Did Nora buy a guitar for her pets?")]
+    # For Nora: c-guitar has 1 live fact, k-pet has 2 live facts (Goldie is archived and excluded).
+    # With max_facts=2 both survive, ordered most-specific first; with max_facts=1 the broader k-pet is dropped.
+    both = await gw.run("query_hits.selective_objects", terms=terms, sid="c-nora", max_facts=2)
+    assert [(r["kid"], int(r["n"])) for r in both] == [("c-guitar", 1), ("k-pet", 2)]
+    narrow = await gw.run("query_hits.selective_objects", terms=terms, sid="c-nora", max_facts=1)
+    assert [(r["kid"], int(r["n"])) for r in narrow] == [("c-guitar", 1)]
+    # Session-scoped variant matches in SESSION and yields nothing in OTHER_SESSION.
+    scoped = await gw.run("query_hits.selective_objects_in_sessions", terms=terms, sid="c-nora",
+                          sessions=sessions(SESSION), max_facts=1)
+    assert [(r["kid"], int(r["n"])) for r in scoped] == [("c-guitar", 1)]
+    other = await gw.run("query_hits.selective_objects_in_sessions", terms=terms, sid="c-nora",
+                         sessions=sessions(OTHER_SESSION), max_facts=2)
+    assert other == []
+    # Archived-only concepts (k-fish) have 0 live facts for Nora and are excluded.
+    fish_terms = [t for t, _ in question_terms("Does Nora own a fish?")]
+    assert await gw.run("query_hits.selective_objects", terms=fish_terms, sid="c-nora", max_facts=25) == []
