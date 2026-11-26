@@ -79,10 +79,18 @@ We show that naive KG failure is not a flaw of graph representation or SPARQL in
 
 ---
 
-## 5. Next Bottleneck: Evergreen SKOS Taxonomy & Ontology Encoding
+## 5. Evergreen SKOS Taxonomy, Specificity-First SPARQL & Shape-Gated Graph Answering
 
-- Even after fixing `HAS_OBJECT` (`76.3%`), **`221 / 809` (27.3%)** of questions still fail Step Q with `gold_object_not_reached_from_named_concept` (e.g., question asks about a `"hobby"`, graph has `"pottery"` with no `INSTANCE_OF / BROADER*` chain to `"hobby"`).
-- `[TBD: Evergreen inline + sweep SKOS taxonomy pipeline design & Step Q / 809 results]`
+- Even after fixing `HAS_OBJECT` (`76.3%`), **`221 / 809` (27.3%)** of questions still failed Step Q with `gold_object_not_reached_from_named_concept` (e.g., question asks about a `"hobby"`, graph has `"pottery"` with no `INSTANCE_OF / BROADER*` chain to `"hobby"`).
+- **Evergreen Automated SKOS Taxonomy (PR #530):** Deterministic inline capture hook (`enrich_concept_inline`) + idempotent GCL sweep (`sweep_store_taxonomy`) using singular lemma normalization, WordNet hypernym walks to a general mid-level ontology ceiling, `HAS_ALT_LABEL` plural/synonym expansion, and B541 cycle protection. Across all 5 Pilot v2 stores (`7.3s` CPU, `0` errors): `+714 INSTANCE_OF`, `+505 BROADER`, `+446 HAS_ALT_LABEL`; reduced `question_names_no_object_concept` from `124 -> 94` (`-30`) and lifted raw SPARQL reach (`HIT + too_broad`) from `315 -> 333 / 809` (`41.2%`).
+- **Specificity-First `query_hits.selective_objects` (PR #529):** Adding a single pure-SPARQL selectivity filter (`GROUP BY ?kid HAVING (COUNT(DISTINCT ?o) <= MAX(?max_facts))`) drops over-broad hub Concepts (`group`, `event`, `activity`) before taking the union, converting `too_broad` collisions into hits (`40 -> 13` plain, `57 -> 21` with taxonomy) and lifting pure-SPARQL Step Q hits to **`294 / 809` (`36.3%`, `2.65×` Claude's `111/809`)**.
+- **Full 809 + Category-5 Gate with `graph_facts` + `selective_objects` (`task-588`, 2026-11-26):**
+  - Overall 809: **`60.8%` (`492/809`)** vs. `b18on` `61.1%` (`494/809`, `-0.25 pts`) and `pv2on` `60.1%` (`486/809`, `+0.74 pts`).
+  - **Temporal (`n=171`):** **`72.5%` (`124/171`)** — **`+6.4 pts` (`+11`) over `b18on` (`66.1%`)** and **`+7.6 pts` (`+13`) over `pv2on` (`64.9%`)**! On `dated` queries (`n=136`), accuracy jumped from `75.0% -> 80.1%` (`+5.1 pts`, zero losses in any category).
+  - **Category-5 Abstention (`n=222`):** **`78.8%` (`175/222`)** — **`+5.8 pts` over `b18c5on` (`73.0%`)**, new all-time high (unchecked 8B rose `55.9% -> 63.5%`, `+7.6 pts`).
+  - **Single-Hop (`n=434`):** recovered `+6` (`69.4% -> 70.7%`).
+  - **Critical Negative Finding (Multi-Hop early stopping):** Indiscriminate all-shape `graph_facts` dropped Multi-Hop from `34.6% (53)` back to `28.8% (44)` (`-9`) because showing partial `[computed: list]` / `[computed: count]` / `open` graph rows caused the 8B reader to treat the graph snippet as exhaustive and ignore remaining conversation turns.
+  - **Implication:** Graph-computed sections must be **shape-gated** (emit structured `graph_facts` on exact/non-exhaustive `dated` queries where it delivered `+6.4 pts` Temporal with zero regressions, while preserving `pv2on`'s `+5.2 pt` Multi-Hop retrieval for multi-hop synthesis).
 
 ---
 
