@@ -947,4 +947,49 @@ OBSERVATION_QUERIES: tuple[NamedQuery, ...] = (
             ORDER BY ?created_at ?message_id
             """,
     ),
+    NamedQuery(
+        name="observations.closed_entity_concepts",
+        cypher="""
+        MATCH (c:Concept)
+        WHERE c.archived = false AND coalesce(c.kind_scheme, '') NOT IN ['kind', 'action', 'relation']
+        OPTIONAL MATCH (c)-[:INSTANCE_OF|IS_A]->(k:Concept)
+        WHERE k.archived = false
+        RETURN c.concept_id AS concept_id, c.text_raw AS text_raw,
+               head(collect(k.text_raw)) AS kind_lbl
+        ORDER BY c.last_accessed_at DESC, c.created_at DESC, c.text_raw
+        LIMIT 150
+        """,
+        params=(),
+        mutating=False,
+        description="Top 150 live non-kind entity Concepts ranked by degree and recency for entity-resolved capture",
+        sparql="""
+            SELECT ?concept_id ?text_raw ?last_accessed_at ?created_at
+                   (COUNT(DISTINCT ?src) AS ?deg)
+                   (SAMPLE(?ktxt) AS ?kind_lbl)
+            WHERE {
+              ?c a campy:Concept ; campy:concept_id ?concept_id ; campy:text_raw ?text_raw ;
+                 campy:archived false .
+              FILTER NOT EXISTS { ?c a campy:ObjectPhrase }
+              FILTER NOT EXISTS { ?c campy:kind_scheme "kind" }
+              FILTER NOT EXISTS { ?c campy:kind_scheme "action" }
+              FILTER NOT EXISTS { ?c campy:kind_scheme "relation" }
+              OPTIONAL { ?c campy:last_accessed_at ?last_accessed_at }
+              OPTIONAL { ?c campy:created_at ?created_at }
+              OPTIONAL {
+                { ?src a campy:Message ; campy:MENTIONS ?c . FILTER NOT EXISTS { ?src campy:archived true } }
+                UNION
+                { ?src a campy:Observation ; (campy:HAS_OBJECT|campy:HAS_SUBJECT|campy:OBSERVATION_ABOUT) ?c .
+                  FILTER NOT EXISTS { ?src campy:archived true } }
+              }
+              OPTIONAL {
+                ?c (campy:INSTANCE_OF|campy:IS_A) ?k .
+                ?k campy:text_raw ?ktxt .
+                FILTER NOT EXISTS { ?k campy:archived true }
+              }
+            }
+            GROUP BY ?concept_id ?text_raw ?last_accessed_at ?created_at
+            ORDER BY DESC(?deg) DESC(?last_accessed_at) DESC(?created_at) ?text_raw
+            LIMIT 150
+            """,
+    ),
 )
