@@ -4,6 +4,10 @@ Observation worker. Storage and the grounded write API live in
 (`timeparse`) and the backfill for older rows (`backfill`)."""
 
 from campy.brain.temporal_lobe.observations.backfill import BackfillStats, backfill_time  # noqa: F401
+from campy.brain.temporal_lobe.observations.entity_resolved import (  # noqa: F401
+    entity_resolved_capture_enabled,
+    extract_entity_resolved_observations,
+)
 from campy.brain.temporal_lobe.observations.extract import (  # noqa: F401
     ObservationWorkerStats,
     build_messages,

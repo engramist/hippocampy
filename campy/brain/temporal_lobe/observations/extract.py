@@ -484,6 +484,25 @@ async def _extract_turn(
 
     speaker = msg.get("speaker")
     occurred_at = msg.get("occurred_at") or msg.get("created_at")
+
+    from campy.brain.temporal_lobe.observations import entity_resolved as er
+
+    if er.entity_resolved_capture_enabled(config):
+        speaker_name = " ".join((speaker or "").split())
+        speaker_id = await find_existing_concept(gw, speaker_name) if _is_named(speaker) else None
+        return await er.extract_entity_resolved_observations(
+            db,
+            llm_client,
+            message_id=message_id,
+            speaker=speaker_name,
+            speaker_id=speaker_id or "",
+            text=text,
+            config=config,
+            occurred_at=occurred_at,
+            embedding_model=embedding_model,
+            stats=stats,
+        )
+
     entities_on = obs.observations_entities_enabled(config)
     owl_on = obs.owl_properties_enabled(config)
     roles_on = obs.object_roles_enabled(config)

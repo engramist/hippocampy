@@ -229,6 +229,10 @@ _DEFAULT_CONFIG = {
         # capture (TimeMention nodes) and shown as "yesterday [= 2023-05-07]" in the bundle.
         # Gate R104 vs R103 (unseen LoCoMo): 0.450 -> 0.503, 28 gained / 12 lost, all 5 conversations up.
         "turn_dates": True,
+        # Entity-resolved typed capture (default OFF; env CAMPY_ENTITY_RESOLVED_CAPTURE=1; in no profile
+        # until gated): 3-turn coreference window, closed entity list, P8 person-anchored subject
+        # grounding, image-caption stripping, and grounded object Concept + SKOS kind admission.
+        "entity_resolved_capture": False,
     },
     "compression": {
         "strategy": "two_lane",       # two_lane (Protected Lane zero loss + Bulk Lane lossy)
@@ -439,6 +443,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_TURN_DATES": ("observations", "turn_dates", _parse_bool),
     # B499: rule-based supersession of attribute Observations (default off).
     "CAMPY_OBSERVATIONS_SUPERSEDE": ("observations", "supersede", _parse_bool),
+    # Entity-resolved typed capture (default off; in no profile until gated).
+    "CAMPY_ENTITY_RESOLVED_CAPTURE": ("observations", "entity_resolved_capture", _parse_bool),
     "CAMPY_LLM_PROVIDER": ("llm", "provider", str.strip),
     "CAMPY_LLM_MODEL": ("llm", "model", str.strip),
     "CAMPY_LLM_REGION": ("llm", "region", str.strip),

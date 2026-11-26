@@ -91,6 +91,7 @@ def test_every_documented_override_applies():
         "CAMPY_ENTITY_STANDING": "1",
         "CAMPY_TRACKER_SIDE_BRANCH": "1",
         "CAMPY_SPOKEN_BY": "1",
+        "CAMPY_ENTITY_RESOLVED_CAPTURE": "1",
     }
     assert set(env) == set(ENV_OVERRIDES), "test must cover every override"
     cfg = apply_env_overrides(_base(), env)
@@ -124,6 +125,7 @@ def test_every_documented_override_applies():
     assert cfg["loop"]["tracker_side_branch"] is True
     assert cfg["loop"]["spoken_by"] is True
     assert cfg["observations"]["evidence_entity_links"] is True
+    assert cfg["observations"]["entity_resolved_capture"] is True
     assert cfg["llm"] == {"provider": "bedrock", "model": "us.example.model-v1:0",
                           "region": "us-east-1", "base_url": "https://llm.internal/v1",
                           "max_tokens": 1024}
