@@ -91,6 +91,9 @@ We show that naive KG failure is not a flaw of graph representation or SPARQL in
   - **Single-Hop (`n=434`):** recovered `+6` (`69.4% -> 70.7%`).
   - **Critical Negative Finding (Multi-Hop early stopping):** Indiscriminate all-shape `graph_facts` dropped Multi-Hop from `34.6% (53)` back to `28.8% (44)` (`-9`) because showing partial `[computed: list]` / `[computed: count]` / `open` graph rows caused the 8B reader to treat the graph snippet as exhaustive and ignore remaining conversation turns.
   - **Implication:** Graph-computed sections must be **shape-gated** (emit structured `graph_facts` on exact/non-exhaustive `dated` queries where it delivered `+6.4 pts` Temporal with zero regressions, while preserving `pv2on`'s `+5.2 pt` Multi-Hop retrieval for multi-hop synthesis).
+- **Dated-Only Shape-Gated `graph_facts` Gate (`task-683`, PR #531, 2026-11-26):**
+  - Restricting `graph_facts` to `["when"]` (`CAMPY_GRAPH_FACTS_SHAPES=when`) achieved a **new all-time high of `61.4%` (`497/809`)** (`+0.37 pts` / `+3` vs. `b18on` `494/809`; **`+1.36 pts` / `+11`** vs. `pv2on` `486/809`; beat or tied `b18on` on `4/5` conversations).
+  - Reproduced the exact **`80.1%` (`109/136`, `+5.1 pts`)** accuracy on `dated` queries, lifted **Cat-2 Temporal to `69.6%` (`+3.5 pts` vs. `b18on`, `+4.7 pts` vs. `pv2on`)**, recovered **Cat-1 Multi-Hop to `33.3%` (`+3.9 pts` vs. `b18on`, `+7` recovered over all-shape)**, kept **Cat-3 Open-Domain at `39.2%` (`+0.0`)**, and held **Cat-5 Abstention at `78.4%` (`+5.4 pts`)**.
 
 ---
 
