@@ -108,3 +108,34 @@ async def test_compile_bundle_uses_graph_facts_instead_of_graph_count(db, gw):
     on = await compile_bundle(PETS, db, {"retrieval": {**base["retrieval"], "graph_facts": True}})
     types = [s.section_type for s in on.sections]
     assert "graph_facts" in types and "graph_count" not in types
+
+
+async def test_graph_facts_shape_gate_flag_and_fallback(db, gw):
+    from campy.brain.brainstem.config import _DEFAULT_CONFIG, apply_env_overrides
+    from campy.brain.thalamus.bundle_compiler import compile_bundle
+
+    assert _DEFAULT_CONFIG["retrieval"]["graph_facts_shapes"] == []
+    assert gf.allowed_graph_facts_shapes(_DEFAULT_CONFIG) == ()
+    assert gf.graph_facts_shape_allowed(_DEFAULT_CONFIG, shape("open")) is True
+
+    cfg = apply_env_overrides({"retrieval": {}}, environ={"CAMPY_GRAPH_FACTS_SHAPES": "when, latest"})
+    assert gf.allowed_graph_facts_shapes(cfg) == ("when", "latest")
+    assert gf.graph_facts_shape_allowed(cfg, shape("when")) is True
+    assert gf.graph_facts_shape_allowed(cfg, shape("list")) is False
+    assert gf.graph_facts_shape_allowed(cfg, None) is False
+
+    await build(db, gw)
+    when_only = {"retrieval": {"graph_facts": True, "graph_facts_shapes": ["when"]}}
+    assert await gf.build_graph_facts_section(db, PETS, when_only, analysis=shape("when")) is not None
+    assert await gf.build_graph_facts_section(db, PETS, when_only, analysis=shape("list")) is None
+    assert await gf.build_graph_facts_section(db, PETS, when_only, analysis=None) is None
+
+    # In compile_bundle, a non-matching shape falls back to graph_count rather than emitting graph_facts.
+    b = await compile_bundle(
+        PETS,
+        db,
+        {"retrieval": {"conversation_token_budget": 0, "graph_count": True,
+                       "graph_facts": True, "graph_facts_shapes": ["when"]}},
+    )
+    types = [s.section_type for s in b.sections]
+    assert "graph_facts" not in types and "graph_count" in types

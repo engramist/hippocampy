@@ -37,6 +37,27 @@ def graph_facts_enabled(config: dict | None) -> bool:
     return bool(((config or {}).get("retrieval") or {}).get("graph_facts", False))
 
 
+def allowed_graph_facts_shapes(config: dict | None) -> tuple[str, ...]:
+    """`[retrieval] graph_facts_shapes` (default empty = all shapes; e.g. `["when"]` for dated-only)."""
+    raw = ((config or {}).get("retrieval") or {}).get("graph_facts_shapes")
+    if not raw:
+        return ()
+    if isinstance(raw, str):
+        items = raw.split(",")
+    else:
+        items = list(raw)
+    return tuple(str(s).strip().lower() for s in items if str(s).strip())
+
+
+def graph_facts_shape_allowed(config: dict | None, analysis=None) -> bool:
+    """True when `graph_facts_shapes` is empty (all shapes) or `analysis.shape` is in the allowed list."""
+    allowed = allowed_graph_facts_shapes(config)
+    if not allowed:
+        return True
+    shape = str(getattr(analysis, "shape", None) or "open").strip().lower()
+    return shape in allowed
+
+
 def _day(value: Any) -> str:
     return str(value)[:10] if value else ""
 
@@ -107,7 +128,7 @@ async def _matched_texts(gw, sid: str, pairs, subject: str, config: dict) -> lis
 async def build_graph_facts_section(db, query: str, config: dict, analysis=None):
     """The `graph_facts` BundleSection, or None (flag off, no subject or object Concept resolved, no fact, too broad,
     or any failure). The normal pipeline answers either way."""
-    if not graph_facts_enabled(config):
+    if not graph_facts_enabled(config) or not graph_facts_shape_allowed(config, analysis):
         return None
     try:
         from campy.brain.hippocampus.graph.gateway import get_gateway

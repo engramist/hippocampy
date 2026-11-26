@@ -132,6 +132,9 @@ graph_linking = true
 # contract lines, shaped by the question analysis); graph_count is not built while it is on. Off until gated.
 # CAMPY_GRAPH_FACTS=1 turns it on.
 # graph_facts = false  # in no profile
+# Restrict graph_facts to specific question_analysis shapes (e.g. ["when"]); empty = all shapes.
+# CAMPY_GRAPH_FACTS_SHAPES=when restricts it via env.
+# graph_facts_shapes = []  # in no profile
 # Object-text matching: the question's words are matched by sentence vector against the object text of the subject's
 # own live facts (top 3 per word, cosine >= 0.75); matched facts are read with the exact-label ones in the graph_facts
 # section. Needs graph_facts. Off until gated. CAMPY_OBJECT_TEXT_MATCH=1 turns it on.
