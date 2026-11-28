@@ -59,10 +59,31 @@ def _words(question: str) -> list[str]:
     return out
 
 
-def question_terms(question: str) -> list[tuple[str, int]]:
+def _wordnet_lemmas(word: str) -> tuple[str, ...]:
+    """Optional WordNet verb/noun lemmas for a single alphabetic token; () if WordNet is unavailable."""
+    try:
+        from campy.brain.temporal_lobe import wordnet as wn_mod
+        wn = wn_mod._wn()
+    except Exception:
+        wn = None
+    if wn is None:
+        return ()
+    out: list[str] = []
+    for pos in ("v", "n"):
+        try:
+            m = wn.morphy(word, pos)
+        except Exception:
+            m = None
+        if m and len(m) >= 3 and m != word and m not in out:
+            out.append(m)
+    return tuple(out)
+
+
+def question_terms(question: str, *, lemmatize: bool = False) -> list[tuple[str, int]]:
     """The question's 1- to 3-word n-grams as (term, position of the first word), each as written, lower-cased and
     title-cased, plus the same with a final "s" dropped from the last word, so an exact label match in SPARQL finds
-    "Melanie", "pottery" or "pet" (from "pets"). Labels are matched by the store's own index, not scanned."""
+    "Melanie", "pottery" or "pet" (from "pets"). When `lemmatize=True`, also adds WordNet verb/noun lemmas for single
+    tokens ("camped" -> "camp"). Labels are matched by the store's own index, not scanned."""
     words = _words(question)
     seen: dict[str, int] = {}
     for i in range(len(words)):
@@ -77,6 +98,12 @@ def question_terms(question: str) -> list[tuple[str, int]]:
                 text = " ".join(f)
                 for variant in (text, text.lower(), " ".join(x[:1].upper() + x[1:].lower() for x in f)):
                     seen.setdefault(variant, i)
+    if lemmatize:
+        for i, w in enumerate(words):
+            low = w.lower()
+            if len(low) >= 4 and low.isalpha():
+                for lemma in _wordnet_lemmas(low):
+                    seen.setdefault(lemma, i)
     return list(seen.items())
 
 

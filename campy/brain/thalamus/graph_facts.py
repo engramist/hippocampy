@@ -125,10 +125,11 @@ async def build_graph_facts_section(db, query: str, config: dict, analysis=None)
         if not subj:
             return None
         sid, subject = subj[0]["sid"], str(subj[0].get("label") or "")
-        terms = [t for t, _ in pairs]
         if selective_objects_enabled(config):
+            terms = [t for t, _ in question_terms(query, lemmatize=True)]
             obj_rows = await gw.run("query_hits.selective_objects", terms=terms, sid=sid, max_facts=MAX_FACTS)
         else:
+            terms = [t for t, _ in pairs]
             obj_rows = await gw.run("query_hits.objects", terms=terms, sid=sid)
         kids = [r["kid"] for r in obj_rows]
         texts = await _matched_texts(gw, sid, pairs, subject, config)

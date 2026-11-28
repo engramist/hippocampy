@@ -238,3 +238,13 @@ async def test_selective_objects_drops_broad_hubs_in_sparql(db, gw):
     # Archived-only concepts (k-fish) have 0 live facts for Nora and are excluded.
     fish_terms = [t for t, _ in question_terms("Does Nora own a fish?")]
     assert await gw.run("query_hits.selective_objects", terms=fish_terms, sid="c-nora", max_facts=25) == []
+
+
+async def test_question_terms_lemmatize_option(monkeypatch):
+    from campy.brain.hippocampus.graph.queries import query_hits as qh
+
+    monkeypatch.setattr(qh, "_wordnet_lemmas", lambda w: ("camp",) if w == "camped" else ())
+    plain = dict(question_terms("Where has Nora camped?"))
+    assert "camp" not in plain
+    lem = dict(question_terms("Where has Nora camped?", lemmatize=True))
+    assert lem["camp"] == 3
