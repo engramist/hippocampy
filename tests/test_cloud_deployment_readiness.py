@@ -70,6 +70,7 @@ def test_every_documented_override_applies():
         "CAMPY_OBSERVATIONS_OWNERSHIP_RULE": "1",
         "CAMPY_GRAPH_COUNT": "1",
         "CAMPY_GRAPH_FACTS": "1",
+        "CAMPY_GRAPH_FACTS_SELECTIVE_OBJECTS": "1",
         "CAMPY_OBJECT_TEXT_MATCH": "1",
         "CAMPY_ANSWER_STYLE": "cite_answer",
         "CAMPY_ANSWER_BOUNDARY_PER_SECTION": "1",
@@ -111,6 +112,7 @@ def test_every_documented_override_applies():
     assert cfg["retrieval"]["turn_rerank_path"] == "/models/reranker"
     assert cfg["retrieval"]["turn_rerank_mode"] == "add"
     assert cfg["retrieval"]["graph_facts"] is True
+    assert cfg["retrieval"]["graph_facts_selective_objects"] is True
     assert cfg["ask"]["answer_style"] == "cite_answer"
     assert cfg["answer"]["boundary_per_section"] is True
     assert cfg["answer"]["checker"] is True

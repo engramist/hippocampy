@@ -36,6 +36,10 @@ _DEFAULT_CONFIG = {
         # subject-anchored query_hits.* rows enter the bundle as a `graph_facts` section in the fact contract's
         # fixed-shape lines, shaped by the question analysis. When on, the graph_count section is not built.
         "graph_facts": False,
+        # Specificity-first query_hits object selection (default OFF; env CAMPY_GRAPH_FACTS_SELECTIVE_OBJECTS=1;
+        # in no profile until gated; needs graph_facts): drops over-broad hub Concepts (> MAX_FACTS live facts for the
+        # subject) in SPARQL via GROUP BY / HAVING before reading query_hits.facts.
+        "graph_facts_selective_objects": False,
         # Object-text matching (default OFF; env CAMPY_OBJECT_TEXT_MATCH=1 turns it on; in no profile until gated;
         # needs graph_facts): the question's words are matched by sentence vector against the object text of the
         # subject's own live facts (top 3 per word, cosine >= 0.75); the matched facts are read with the exact-label
@@ -381,6 +385,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_GRAPH_COUNT": ("retrieval", "graph_count", _parse_bool),
     # Step 3: the query_hits rows as a fixed-shape bundle section (replaces graph_count when on).
     "CAMPY_GRAPH_FACTS": ("retrieval", "graph_facts", _parse_bool),
+    # Specificity-first object Concept selection for graph_facts (drops over-broad hubs in SPARQL).
+    "CAMPY_GRAPH_FACTS_SELECTIVE_OBJECTS": ("retrieval", "graph_facts_selective_objects", _parse_bool),
     # 2026-11-17: the answer instruction style (cite | legacy | cite_answer); cite is the default.
     "CAMPY_ANSWER_STYLE": ("ask", "answer_style", str),
     # ND-15: one B339 boundary per prompt section (off by default).

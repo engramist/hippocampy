@@ -14,6 +14,8 @@ Reads:
                                      label (the `_in_sessions` form keeps to the given Sessions)
   query_hits.objects                 the other Concepts named by a term (label or altLabel), not action kinds, that a
   query_hits.objects_in_sessions     turn MENTIONS or a fact's object reaches by INSTANCE_OF / BROADER*
+  query_hits.selective_objects       same as query_hits.objects, anchored on the subject's live facts and keeping only
+  query_hits.selective_objects_in_sessions  Concepts with 1..max_facts live facts (drops over-broad hubs in SPARQL)
   query_hits.relation_subject        a person named by relation of the subject ("Nora's kids"): the relation
                                      Concepts RELATION_OF the subject whose relation_label is a question term
   query_hits.facts                   the subject's live facts whose HAS_OBJECT is K, an instance of K, or narrower,
@@ -57,10 +59,31 @@ def _words(question: str) -> list[str]:
     return out
 
 
-def question_terms(question: str) -> list[tuple[str, int]]:
+def _wordnet_lemmas(word: str) -> tuple[str, ...]:
+    """Optional WordNet verb/noun lemmas for a single alphabetic token; () if WordNet is unavailable."""
+    try:
+        from campy.brain.temporal_lobe import wordnet as wn_mod
+        wn = wn_mod._wn()
+    except Exception:
+        wn = None
+    if wn is None:
+        return ()
+    out: list[str] = []
+    for pos in ("v", "n"):
+        try:
+            m = wn.morphy(word, pos)
+        except Exception:
+            m = None
+        if m and len(m) >= 3 and m != word and m not in out:
+            out.append(m)
+    return tuple(out)
+
+
+def question_terms(question: str, *, lemmatize: bool = False) -> list[tuple[str, int]]:
     """The question's 1- to 3-word n-grams as (term, position of the first word), each as written, lower-cased and
     title-cased, plus the same with a final "s" dropped from the last word, so an exact label match in SPARQL finds
-    "Melanie", "pottery" or "pet" (from "pets"). Labels are matched by the store's own index, not scanned."""
+    "Melanie", "pottery" or "pet" (from "pets"). When `lemmatize=True`, also adds WordNet verb/noun lemmas for single
+    tokens ("camped" -> "camp"). Labels are matched by the store's own index, not scanned."""
     words = _words(question)
     seen: dict[str, int] = {}
     for i in range(len(words)):
@@ -75,6 +98,12 @@ def question_terms(question: str) -> list[tuple[str, int]]:
                 text = " ".join(f)
                 for variant in (text, text.lower(), " ".join(x[:1].upper() + x[1:].lower() for x in f)):
                     seen.setdefault(variant, i)
+    if lemmatize:
+        for i, w in enumerate(words):
+            low = w.lower()
+            if len(low) >= 4 and low.isalpha():
+                for lemma in _wordnet_lemmas(low):
+                    seen.setdefault(lemma, i)
     return list(seen.items())
 
 
@@ -125,6 +154,28 @@ def _objects_sparql(scoped: bool) -> str:
               }}
             }}
             ORDER BY ?kid
+            """
+
+
+def _selective_objects_sparql(scoped: bool) -> str:
+    scope = _IN_SESSIONS if scoped else ""
+    return f"""
+            SELECT ?kid (COUNT(DISTINCT ?o) AS ?n) WHERE {{
+              VALUES ?term {{ }}
+              {{ ?k campy:text_raw ?term }} UNION {{ ?k campy:HAS_ALT_LABEL ?_l . ?_l campy:text ?term }}
+              ?k a campy:Concept ; campy:concept_id ?kid .
+              FILTER(?kid != ?sid && STRLEN(?term) > 2)
+              FILTER NOT EXISTS {{ ?k campy:kind_scheme "action" }}
+              FILTER NOT EXISTS {{ ?k campy:archived true }}
+              ?x (campy:INSTANCE_OF|campy:BROADER)* ?k .
+              ?o a campy:Observation ; campy:HAS_OBJECT ?x ; campy:EVIDENCED_BY ?m .
+              {{ ?o campy:HAS_SUBJECT ?_s . ?_s campy:concept_id ?sid }} UNION {{ ?o campy:subject_id ?sid }}
+              {scope}
+              {_LIVE_FACT}
+            }}
+            GROUP BY ?kid
+            HAVING (COUNT(DISTINCT ?o) <= MAX(?max_facts))
+            ORDER BY ?n ?kid
             """
 
 
@@ -209,6 +260,28 @@ QUERY_HIT_QUERIES = [
         mutating=False,
         description="query_hits.objects kept to the turns SENT_IN the given Session IRIs",
         sparql=_objects_sparql(scoped=True),
+    ),
+    NamedQuery(
+        name="query_hits.selective_objects",
+        cypher=("MATCH (o:Observation {subject_id: $sid})-[:HAS_OBJECT]->(x)-[:INSTANCE_OF|BROADER*0..]->(k:Concept) "
+                "WHERE k.text_raw IN $terms AND k.concept_id <> $sid AND o.archived = false "
+                "WITH k, count(DISTINCT o) AS n WHERE n <= $max_facts RETURN k.concept_id AS kid, n ORDER BY n, kid"),
+        params=("terms", "sid", "max_facts"),
+        mutating=False,
+        description=("Specificity-first object Concepts for the subject: keeps only Concepts whose subject-scoped "
+                     "live-fact count is in 1..max_facts (drops over-broad hubs in SPARQL via GROUP BY / HAVING)"),
+        sparql=_selective_objects_sparql(scoped=False),
+    ),
+    NamedQuery(
+        name="query_hits.selective_objects_in_sessions",
+        cypher=("MATCH (o:Observation {subject_id: $sid})-[:HAS_OBJECT]->(x)-[:INSTANCE_OF|BROADER*0..]->(k:Concept), "
+                "(o)-[:EVIDENCED_BY]->(m:Message)-[:SENT_IN]->(s:Session) "
+                "WHERE s IN $sessions AND k.text_raw IN $terms AND k.concept_id <> $sid AND o.archived = false "
+                "WITH k, count(DISTINCT o) AS n WHERE n <= $max_facts RETURN k.concept_id AS kid, n ORDER BY n, kid"),
+        params=("terms", "sid", "sessions", "max_facts"),
+        mutating=False,
+        description="query_hits.selective_objects kept to the turns SENT_IN the given Session IRIs",
+        sparql=_selective_objects_sparql(scoped=True),
     ),
     NamedQuery(
         name="query_hits.relation_subject",

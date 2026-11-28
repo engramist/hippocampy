@@ -37,6 +37,11 @@ def graph_facts_enabled(config: dict | None) -> bool:
     return bool(((config or {}).get("retrieval") or {}).get("graph_facts", False))
 
 
+def selective_objects_enabled(config: dict | None) -> bool:
+    """`[retrieval] graph_facts_selective_objects` (default false; env `CAMPY_GRAPH_FACTS_SELECTIVE_OBJECTS=1`)."""
+    return bool(((config or {}).get("retrieval") or {}).get("graph_facts_selective_objects", False))
+
+
 def _day(value: Any) -> str:
     return str(value)[:10] if value else ""
 
@@ -120,7 +125,13 @@ async def build_graph_facts_section(db, query: str, config: dict, analysis=None)
         if not subj:
             return None
         sid, subject = subj[0]["sid"], str(subj[0].get("label") or "")
-        kids = [r["kid"] for r in await gw.run("query_hits.objects", terms=[t for t, _ in pairs], sid=sid)]
+        if selective_objects_enabled(config):
+            terms = [t for t, _ in question_terms(query, lemmatize=True)]
+            obj_rows = await gw.run("query_hits.selective_objects", terms=terms, sid=sid, max_facts=MAX_FACTS)
+        else:
+            terms = [t for t, _ in pairs]
+            obj_rows = await gw.run("query_hits.objects", terms=terms, sid=sid)
+        kids = [r["kid"] for r in obj_rows]
         texts = await _matched_texts(gw, sid, pairs, subject, config)
         if not kids and not texts:
             return None
