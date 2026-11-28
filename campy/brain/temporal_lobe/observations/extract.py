@@ -595,6 +595,23 @@ async def _extract_turn(
                     # B522: the entity write_entity resolved is this claim's object
                     await obs.write_roles(gw, result.observation_id, subject_id=draft.subject_id,
                                           object_id=ent_id)
+                if ent_id and obs.evergreen_taxonomy_enabled(config):
+                    try:
+                        from campy.brain.hippocampus.evergreen_taxonomy import enrich_concept_inline
+
+                        await enrich_concept_inline(
+                            gw,
+                            ent_id,
+                            proposed_entity.entity,
+                            proposed_kind=proposed_entity.kind,
+                            config=config,
+                        )
+                    except Exception:
+                        _logger.warning(
+                            "[EvergreenTaxonomy] inline enrichment failed msg=%s",
+                            message_id[:8],
+                            exc_info=True,
+                        )
             except Exception:
                 _logger.warning("[ObservationEntities] entity write failed msg=%s", message_id[:8], exc_info=True)
         if admitted and result.ok and result.observation_id:

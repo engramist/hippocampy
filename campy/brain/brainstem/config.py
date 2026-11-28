@@ -223,6 +223,10 @@ _DEFAULT_CONFIG = {
         # already proposes about "we" gets the speaker as subject (group_subject = true), by rule; the prompt is untouched
         # and no relation ("my ...") Concept is made. A partner only as the PERSON X in "X and I" or after "with".
         "group_anchor": False,
+        # Evergreen SKOS taxonomy (default OFF; env CAMPY_EVERGREEN_TAXONOMY=1; in no profile until gated):
+        # normalizes object/kind labels to singular lemmas, links Concept -INSTANCE_OF-> Kind, and walks
+        # WordNet hypernyms up to the mid-level ceiling with B541 cycle protection.
+        "evergreen_taxonomy": False,
         "supersede": False,        # B499: newer attribute value supersedes older (CAMPY_OBSERVATIONS_SUPERSEDE=1)
         # B538 (default ON; env CAMPY_TURN_DATES=0 turns it off): every user turn's relative time
         # expressions ("yesterday", "last week") are resolved by rule against the turn's date at
@@ -425,6 +429,8 @@ ENV_OVERRIDES: dict[str, tuple[str, str, object]] = {
     "CAMPY_WORDNET_KINDS": ("observations", "wordnet_kinds", _parse_bool),
     # B535: the vocabulary steward proposes kind links and entity kinds from closed choices.
     "CAMPY_VOCAB_STEWARD": ("observations", "vocab_steward", _parse_bool),
+    # Evergreen SKOS taxonomy: normalize kinds, link INSTANCE_OF, walk WordNet BROADER up to ceiling (default off).
+    "CAMPY_EVERGREEN_TAXONOMY": ("observations", "evergreen_taxonomy", _parse_bool),
     # B546: the object of a fact is a typed entity (HAS_OBJECT to a Concept or an ObjectPhrase, INSTANCE_OF by rule).
     "CAMPY_TYPED_OBJECTS": ("observations", "typed_objects", _parse_bool),
     # B554: an Observation is linked (OBSERVATION_ABOUT) to the admitted entities its evidence names.
