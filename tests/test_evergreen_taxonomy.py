@@ -450,6 +450,21 @@ async def test_inline_capture_hook_swallows_taxonomy_errors(db, gw, monkeypatch,
     assert any("evergreen_taxonomy inline enrichment failed" in r.message for r in caplog.records)
 
 
+async def test_derive_alt_labels_article_prep_gerund_and_idempotency(db, gw, wn):
+    assert "transgender conference" in et.derive_alt_labels("a transgender conference")
+    alts_race = et.derive_alt_labels("a charity race for mental health")
+    assert "charity race for mental health" in alts_race and "charity race" in alts_race
+    assert "field" in et.derive_alt_labels("field of study")
+    assert "camping" in et.derive_alt_labels("camping trip")
+
+    await _add_concept(gw, "c-conf", "a transgender conference")
+    await _add_concept(gw, "c-race", "a charity race for mental health")
+    s1 = await et.sweep_store_taxonomy(db, config={"observations": {"evergreen_taxonomy": True}})
+    assert s1.new_alt_labels >= 3
+    s2 = await et.sweep_store_taxonomy(db, config={"observations": {"evergreen_taxonomy": True}})
+    assert s2.new_alt_labels == 0 and s2.new_broader == 0 and s2.new_instance_of == 0
+
+
 async def test_sweep_hook_runs_only_when_flag_enabled(db, gw, wn, monkeypatch):
     # Stub earlier sweep steps so test focuses cleanly on Step 7.7
     monkeypatch.setattr(sweep_mod, "_decay_and_archive", AsyncMock(return_value=(0, 0, 0)))

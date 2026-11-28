@@ -21,6 +21,7 @@ from __future__ import annotations
 import collections
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
 import logging
 import re
 import time
@@ -503,6 +504,117 @@ def _index_kinds(kinds: dict[str, kinds_mod.Kind]) -> tuple[dict[str, str], dict
     return by_key, broader_adj
 
 
+_LEAD_ARTICLE_RE = re.compile(r"^(?:a|an|the|my|her|his|their|our|some|new)\s+", re.I)
+_PREP_TAIL_RE = re.compile(r"\s+(?:for|of|in|at|on|to|with|about|around|from|by)\s+.+$", re.I)
+
+
+def derive_alt_labels(label: str) -> set[str]:
+    """Deterministic morphological & lexical `HAS_ALT_LABEL` variants for a Concept label.
+
+    Generates:
+      1. Leading-determiner stripped form (`"a transgender conference"` -> `"transgender conference"`).
+      2. Prepositional-head form (`"a charity race for mental health"` -> `"charity race"`,
+         `"field of study"` -> `"field"`).
+      3. Gerund and WordNet verb stems (`"painting"` -> `"paint"`, `"camping trip"` -> `"camping"`, `"camp"`).
+      4. WordNet primary-synset single-word noun synonyms (`"occupation"` -> `"career"`).
+    """
+    alts: set[str] = set()
+    s = " ".join((label or "").strip().split())
+    low = s.lower()
+    if not low or len(low) < 3:
+        return alts
+
+    s1 = _LEAD_ARTICLE_RE.sub("", low).strip()
+    if s1 and s1 != low and len(s1) >= 3 and not closed_class.is_closed_class(s1):
+        alts.add(s1)
+    base = s1 or low
+
+    s2 = _PREP_TAIL_RE.sub("", base).strip()
+    if s2 and s2 != base and len(s2) >= 3 and not closed_class.is_closed_class(s2):
+        alts.add(s2)
+
+    wn = wn_mod._wn()
+    words = (s2 or base).split()
+    gerund_cands = ([words[0]] if len(words) >= 2 and words[0].endswith("ing") else []) + (
+        [base] if len(words) == 1 else []
+    )
+    for w in gerund_cands:
+        if w.endswith("ing") and len(w) >= 5 and w.isalpha():
+            if not closed_class.is_closed_class(w):
+                alts.add(w)
+            if wn is not None:
+                try:
+                    v = wn.morphy(w, "v")
+                except Exception:
+                    v = None
+                if v and len(v) >= 3 and not closed_class.is_closed_class(v):
+                    alts.add(v)
+
+    if wn is not None and len(words) == 1 and len(base) >= 4 and base.isalpha():
+        try:
+            syns = wn.synsets(base, pos="n")
+        except Exception:
+            syns = []
+        if syns:
+            for lm in syns[0].lemmas():
+                nm = lm.name().replace("_", " ").lower()
+                if nm != base and len(nm) >= 4 and " " not in nm and not closed_class.is_closed_class(nm):
+                    alts.add(nm)
+
+    alts.discard(low)
+    return alts
+
+
+async def _attach_derived_alt_labels(
+    gw: Any,
+    concept_id: str,
+    label: str,
+    existing_alts: set[str] | None = None,
+) -> int:
+    """Write deterministic derived `HAS_ALT_LABEL`s for `concept_id`, skipping any already present."""
+    derived = derive_alt_labels(label)
+    if not derived:
+        return 0
+    have = {a.casefold() for a in (existing_alts or ())}
+    now = datetime.now(timezone.utc).isoformat()
+    added = 0
+    for alt in sorted(derived):
+        if alt.casefold() in have:
+            continue
+        lid = "lbl_" + hashlib.sha256(f"{concept_id}:{alt}".encode("utf-8")).hexdigest()[:16]
+        await gw.run("quests.create_alt_label", lid=lid, txt=alt, now=now)
+        await gw.run("quests.link_concept_has_alt_label", cid=concept_id, lid=lid)
+        have.add(alt.casefold())
+        added += 1
+    return added
+
+
+async def _load_concept_alt_labels(gw: Any) -> dict[str, set[str]]:
+    """Read-through map `concept_id -> {alt_label_lower}` for live Concepts."""
+    client = getattr(gw, "_client", None)
+    exec_collect = getattr(client, "_execute_and_collect", None)
+    if exec_collect is None:
+        return {}
+    sparql = """
+        PREFIX campy: <https://campy.dev/ns#>
+        SELECT DISTINCT ?cid ?txt WHERE {
+          ?c a campy:Concept ; campy:concept_id ?cid ; campy:HAS_ALT_LABEL ?l .
+          ?l campy:text ?txt .
+          FILTER NOT EXISTS { ?c campy:archived true }
+        }
+    """
+    out: dict[str, set[str]] = collections.defaultdict(set)
+    try:
+        for r in exec_collect(sparql):
+            cid = str(r.get("cid") or "")
+            txt = str(r.get("txt") or "").strip().casefold()
+            if cid and txt:
+                out[cid].add(txt)
+    except Exception:
+        pass
+    return out
+
+
 async def _load_pref_labels(gw: Any, kinds: dict[str, kinds_mod.Kind]) -> None:
     """Also read `HAS_PREF_LABEL -> Label` if present on any kind Concept."""
     client = getattr(gw, "_client", None)
@@ -802,6 +914,10 @@ async def enrich_concept_inline(
         res.new_broader += br
         res.cycles_prevented += cyc
 
+    # Attach deterministic derived HAS_ALT_LABELs (article-strip, prep-head, gerund stem, WN synonym)
+    if not is_phrase and ner_label != "PERSON":
+        res.new_alt_labels += await _attach_derived_alt_labels(gw, concept_id, label)
+
     res.elapsed_ms = (time.perf_counter() - t0) * 1000.0
     return res
 
@@ -1026,6 +1142,23 @@ async def sweep_store_taxonomy(
         stats.new_alt_labels += alts
         stats.new_broader += br
         stats.cycles_prevented += cyc
+
+    # 8. Deterministic derived HAS_ALT_LABEL pass across all live non-PERSON Concepts (idempotent)
+    existing_alts = await _load_concept_alt_labels(gw)
+    for row in await gw.run("concept_links.live_concepts"):
+        cid = str(row.get("concept_id") or "")
+        lbl = str(row.get("text_raw") or "")
+        ner = str(row.get("ner_label") or "")
+        if not cid or not lbl or ner == "PERSON":
+            continue
+        try:
+            added = await _attach_derived_alt_labels(gw, cid, lbl, existing_alts.get(cid))
+            if added:
+                stats.new_alt_labels += added
+                existing_alts.setdefault(cid, set()).update(a.casefold() for a in derive_alt_labels(lbl))
+        except Exception:
+            stats.errors += 1
+            _logger.debug("sweep derived altLabel failed for %s (%r)", cid, lbl, exc_info=True)
 
     stats.elapsed_ms = (time.perf_counter() - t0) * 1000.0
     return stats
