@@ -142,3 +142,23 @@ def test_prediction_must_be_in_score_effect_section():
 def test_prediction_not_required_off_path():
     assert check("## Score effect\nNone — docs\n", IRRELEVANT)[0]
     assert prediction_ok("Prediction: LoCoMo flat")[0] and not prediction_ok("")[0]
+
+
+def test_result_pr_requires_lessons_and_living_paper():
+    ok, msg = check("notes update", ["learnings/e2e-status.md"])
+    assert not ok and "lessons-learned.md" in msg
+
+    ok, msg = check("notes update", ["learnings/e2e-status.md", "learnings/lessons-learned.md"])
+    assert not ok and "learnings/papers/" in msg
+
+    ok, _ = check(
+        "notes update",
+        ["learnings/e2e-status.md", "learnings/lessons-learned.md", "learnings/papers/paper1-kg-memory-postmortem.md"],
+    )
+    assert ok
+
+    ok, _ = check(
+        "notes update\nPapers: none — housekeeping only\n",
+        ["learnings/e2e-status.md", "learnings/lessons-learned.md"],
+    )
+    assert ok

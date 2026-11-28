@@ -105,6 +105,33 @@ _PREDICTION_RE = re.compile(r"^\W*Prediction:[ \t]*(\S.*)$", re.IGNORECASE | re.
 _PREDICTION_NONE_RE = re.compile(r"^none\b", re.IGNORECASE)
 _PREDICTION_NONE_REASON_RE = re.compile(r"^none[ \t]*[—–-][ \t]*\S", re.IGNORECASE)
 
+# Result PRs (updating e2e-status.md or lessons-learned.md) must also update lessons-learned.md and
+# at least one living paper under learnings/papers/, or state `Papers: none — <reason>` in the PR body.
+STATUS_PATH = "learnings/e2e-status.md"
+LESSONS_PATH = "learnings/lessons-learned.md"
+PAPERS_PREFIX = "learnings/papers/"
+_PAPERS_NONE_RE = re.compile(r"^\W*Papers:[ \t]*none[ \t]*[—–-][ \t]*\S", re.IGNORECASE | re.MULTILINE)
+
+
+def result_docs_ok(body, changed):
+    """Return (ok, problem). Enforces lessons-learned + living papers updates on result PRs."""
+    changed_set = set(changed or ())
+    if STATUS_PATH not in changed_set and LESSONS_PATH not in changed_set:
+        return True, ""
+    if STATUS_PATH in changed_set and LESSONS_PATH not in changed_set:
+        return False, (
+            f"This PR updates `{STATUS_PATH}` without adding an entry to `{LESSONS_PATH}`. "
+            "Every test or trial result PR must append a lessons entry (see learnings/e2e-improvement-plan.md)."
+        )
+    has_paper = any(f.startswith(PAPERS_PREFIX) for f in changed_set)
+    if not has_paper and not _PAPERS_NONE_RE.search(body or ""):
+        return False, (
+            f"This result PR updates `{LESSONS_PATH}` without updating a living paper under `{PAPERS_PREFIX}` "
+            "(`paper1-kg-memory-postmortem.md` or `paper2-agent-architectural-drift.md`). "
+            "Update the relevant paper draft, or add 'Papers: none — <reason>' to the PR body."
+        )
+    return True, ""
+
 
 def prediction_ok(section):
     """Return (ok, problem) for the Score effect section's `Prediction:` line."""
@@ -121,6 +148,9 @@ def prediction_ok(section):
 
 def check(body, changed):
     """Return (ok, message)."""
+    r_ok, r_problem = result_docs_ok(body, changed)
+    if not r_ok:
+        return False, r_problem
     hits = relevant_files(changed)
     if not hits:
         return True, "No retrieval/answering/config paths changed; score effect not required."

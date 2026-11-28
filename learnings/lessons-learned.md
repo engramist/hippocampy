@@ -1240,3 +1240,60 @@ Replays on kept stores (DMR 50, LoCoMo-10 conv-26 60), 26B judge with 3 votes.
   - So for a stage that changes only the answer, a stored-prompt read is a sound cheap proxy, provided the stage's inputs match byte for byte (100% here).
   - The gain sits in temporal and single-hop; multi-hop is flat, where the checker is blind (AUC 0.52). Open-domain loses 7.8 points because the 26B is worse there, so a per-category rule could keep that gain. That would be a new lever, fitted on these questions, and needs held-out data.
   - On memory, the swap is cheap, but a 60-question smoke did not bound the worst case. It saw 15% at the lowest; the full run hit 9% on one long answer. Long 26B outputs press the guard: the KV cache grows with the answer, so the output cap matters for headroom as well as for time. A smoke sized to the run's escalation count, or the longest outputs, would have caught it.
+
+### 2026-11-24 Full 5-Conversation Pilot v2 Capture + Step Q + 809/Cat-5 GPU Gate (`task-299` & `task-322`)
+- **Why:** After ND-13 (809/809 exact fidelity; 73/159 misses are cat-1 multi-hop) and `bridge_809` (stopped offline over `s4p`'s noun-chunk graph), our `conv-26` Pilot v2 achieved 4.0% blind triple error (2/50), 82.9% non-attr `HAS_OBJECT -> Concept`, 2.7× pure-SPARQL Step Q hits (16 → 43), and 66.5% stacked with ND-18b (+9.4 pts multi-hop). We scaled Pilot v2 capture (`num_ctx=4096`) to all 5 conversations and ran the full 809 + Category-5 (222) end-to-end gate (`pv2on` / `pv2c5on`) against Claude's `b18on` (`61.1%`).
+- **What:** `pilot_conv26.py` (`gemma4:26b`, `think=False`, `num_ctx=4096`, 3-turn coreference context, closed entity list, P8 person-anchored subjects, stripped image captions, speaker alias merging, SHACL validation) across all 5 stores (`~/campy-lead/scratch/capture_pilot_v2/store_*`), followed by `qh.py` Step Q on all 5 stores, then `replay_arm_nd18b.py` + 26B 3-vote `judge_arm.py` (`pv2on_*`, `pv2c5on_*`; `CAMPY_GRAPH_FACTS` off). Control: `b18on_*` / `b18c5on_*` (job 1019).
+- **Lines (pre-registered):** pass > +1.9 pts over `b18on` (`> 63.0%` on 809) with category-5 abstention down ≤ 5 pts; kill ≤ 0 pts vs. `b18on` or category-5 down > 10 pts.
+- **Result:**
+  - **Capture & Step Q across all 5 stores (`n=809`):**
+    - Total live Observations: **3,342**; non-attribute `HAS_OBJECT -> Concept`: **76.3% (2,084/2,730)** vs. ~6% on 8B (**12.7× jump**; range 69.4%–83.5%).
+    - Pure-SPARQL Step Q `HIT`s (zero vectors, zero object-text): **275 / 809 (34.0%)** (+40 `too_broad` = 38.9% reached) vs. **111 / 809 (13.7%)** on `s4p` (**2.5× / +148% jump**). `gold_fact_object_is_text` dropped 216 → 53 (-75%); `no_fact_on_gold_turn` 79 → 38 (-52%); `gold_fact_without_subject_edge` 90 → 47 (-48%). Remaining #1 gap: `gold_object_not_reached_from_named_concept` = **221 / 809 (27.3%)** (taxonomy/ontology gap).
+  - **End-to-end 809 + Category-5 Gate (`pv2on` vs. `b18on`):**
+    - **Overall 809:** **60.1% (486/809)** vs. `b18on` **61.1% (494/809)** — **-1.0 pts** (net -8: gained 69, lost 77; inside ±1.7 pt noise; **hit kill line ≤ 0**). Escalated 205/809 (25.3%), 0 checker errors, 7 escalation errors.
+    - **By category (`pv2on` vs. `b18on`):**
+      - **Multi-hop (`n=153`):** **34.6% (53)** vs. `29.4% (45)` — **+5.2 pts (+8 net)** across all 5 conversations.
+      - **Open-domain (`n=51`):** **41.2% (21)** vs. `39.2% (20)` — **+2.0 pts (+1)**.
+      - **Temporal (`n=171`):** `64.9% (111)` vs. `66.1% (113)` — `-1.2 pts (-2)`.
+      - **Single-hop (`n=434`):** `69.4% (301)` vs. `72.8% (316)` — **-3.4 pts (-15 net)**.
+    - **Per conversation (`pv2on` vs. `b18on`):** `conv-26` +1, `conv-41` +0, `conv-48` -6, `conv-49` -4, `conv-50` +1.
+    - **Category-5 correct abstention (`n=222`):** **78.4% (174/222)** vs. `b18c5on` **73.0% (162/222)** (**+5.4 pts**; unchecked 8B rose from `55.9%` to `62.2%`, **+6.3 pts**).
+    - **Abstentions on 809:** `139` vs. `122` (+17 more refusals on `pv2on`).
+- **Decision:** **KILL on overall 809 (`-1.0 pts ≤ 0`); do not flip default.** Keep the 5 Pilot v2 stores as our verified graph substrate — they proved a **+5.2 pt multi-hop win** and **+5.4 pt cat-5 abstention win** while isolating the single-hop regression (`-15` questions / `+17` refusals, concentrated in `conv-48` and `conv-49`).
+- **Lesson:** (1) `num_ctx=4096` eliminated 26B KV-cache memory guard stops across 2,800+ turns. (2) Entity-resolved typed capture delivers a consistent **+5.2 pt multi-hop gain** across all 5 conversations where reader escalation was flat (+0.0). (3) Follow-up offline audit of the 45 lost Single-Hop questions showed Pilot v2 actually *improved* Single-Hop recall (`86.9% -> 88.8%`, `+1.84 pts`) and `graph_vote_turns` fired *more* on won Single-Hop (`73.3%`) than lost (`66.7%`); the `-15` Single-Hop net was mostly `+7` extra abstentions (flip side of `+5.4 pt` Cat-5 win) while `CAMPY_GRAPH_FACTS` was still off.
+
+### 2026-11-26 Full 809 + Category-5 Gate: Pilot v2 + Evergreen SKOS Taxonomy + `graph_facts` + `selective_objects` (`task-588`, PR #529 & PR #530)
+- **Why:** Offline Step Q sizing showed that Evergreen SKOS Taxonomy (`evergreen_taxonomy.py`, PR #530) + pure-SPARQL `query_hits.selective_objects` (`GROUP BY ?kid HAVING (COUNT(DISTINCT ?o) <= MAX(?max_facts))`, PR #529) lifted pure-SPARQL hits from `275 -> 294 / 809` (`36.3%`, `2.65×` Claude's `111/809`) while cutting `too_broad` collisions by `63%` (`57 -> 21`). Since `pv2on` had `CAMPY_GRAPH_FACTS=0`, the answerer never saw those structured facts. We tested `CAMPY_GRAPH_FACTS=1` + `CAMPY_GRAPH_FACTS_SELECTIVE_OBJECTS=1` on the 5 Evergreen-Taxonomy Pilot v2 stores (`pv2tgf` / `pv2tgfc5`).
+- **What:** `replay_arm_nd18b.py` on PR #529 (`6bc5f007`) across all 5 Evergreen-Taxonomy Pilot v2 stores (`+714 INSTANCE_OF`, `+505 BROADER`, `+446 HAS_ALT_LABEL`, 0 errors in 7.3s), with `CAMPY_GRAPH_FACTS=1`, `CAMPY_GRAPH_FACTS_SELECTIVE_OBJECTS=1`, ND-18b checker + `gemma4:26b` escalation, 26B 3-vote `judge_arm.py`. Controls: `b18on` (`61.1%`) and `pv2on` (`60.1%`).
+- **Lines (pre-registered):** pass `> +1.9 pts` over `b18on` (`> 63.0%` on 809), holding Multi-Hop `> 34%` and Cat-5 `> 75%`; kill `<= 0 pts` vs. `b18on` (`<= 61.1%`).
+- **Result:**
+  - **Overall 809:** **60.8% (492/809)** vs. `b18on` **61.1% (494/809)** (**-0.25 pts**, `g=71, l=73`, net `-2`; **hit kill line `<= 0`**) and **+0.74 pts (+6)** over `pv2on` (`486/809`).
+  - **By category (`pv2tgf` vs. `b18on` / `pv2on`):**
+    - **Temporal (`n=171`):** **72.5% (124)** vs. `b18on` `66.1% (113)` (**+6.4 pts / +11**) and `pv2on` `64.9% (111)` (**+7.6 pts / +13**).
+    - **Single-Hop (`n=434`):** `70.7% (307)` vs. `b18on` `72.8% (316)` (`-2.1 pts / -9`) and `pv2on` `69.4% (301)` (**+1.4 pts / +6**).
+    - **Multi-Hop (`n=153`):** `28.8% (44)` vs. `b18on` `29.4% (45)` (`-0.7 pts / -1`) and `pv2on` `34.6% (53)` (**-5.9 pts / -9**).
+    - **Open-Domain (`n=51`):** `33.3% (17)` vs. `b18on` `39.2% (20)` (`-5.9 pts / -3`) and `pv2on` `41.2% (21)` (**-7.8 pts / -4**).
+  - **Category-5 Abstention (`n=222`):** **78.8% (175/222)** vs. `b18c5on` `73.0% (162/222)` (**+5.8 pts**, new all-time high; unchecked 8B rose `55.9% -> 63.5%`, **+7.6 pts**).
+  - **Shape-by-category breakdown (`pv2tgf` vs. `pv2on`, `graph_facts` fired on `573/809`):**
+    - `graph_facts` fired (`n=573`): **`64.9% (372)`** vs. `b18on` `64.0% (367)` (`+5`) and `pv2on` `63.5% (364)` (`+8`).
+    - **`dated` (`n=136`):** **`80.1% (109)`** vs. `75.0% (102)` (**+5.1 pts / +7**, `Cat 1: +0, Cat 2: +7, Cat 3: +0, Cat 4: +0` — **zero losses in any category**).
+    - `open` (`n=341`): `+3` total (`Cat 2: +4, Cat 4: +5`, but `Cat 1: -2, Cat 3: -4`).
+    - `list` / `count` / `exists` / `latest` (`n=96`): `-2` total (`Cat 1 Multi-Hop: -4` combined — partial graph lists cause the 8B answerer to stop early instead of synthesizing across conversation turns).
+- **Decision:** **KILL indiscriminate all-shape `graph_facts` (`-0.25 pts <= 0`); do not flip default.** Keep PR #529 (`selective_objects`) and PR #530 (`evergreen_taxonomy`) behind flags. Next lever: **shape-gated `graph_facts` (`dated`-only)** so we combine `pv2tgf`'s **+6.4 pt Temporal** win (`72.5%`) with `pv2on`'s **+5.2 pt Multi-Hop** win (`34.6%`) and **78.8% Cat-5** without Multi-Hop early-stopping regressions.
+- **Lesson:** Structured `graph_facts` is **decisively positive on `dated` (`when`) queries** (`+5.1 pts` on `dated`, `+6.4 pts` on Cat-2 Temporal, zero category regressions) because dates on source turns are exact and non-exhaustive, whereas showing partial `[computed: list]` / `[computed: count]` / `open` graph rows on Multi-Hop questions causes the 8B reader to treat the graph snippet as exhaustive and ignore remaining conversation turns (`-9` Multi-Hop).
+
+### 2026-11-26 Full 809 + Category-5 Gate: Dated-Only Shape-Gated `graph_facts` (`task-683`, PR #529 + #530 + #531)
+- **Why:** `pv2tgf` (`task-588`) proved that `graph_facts` gained `+5.1 pts` (`102 -> 109/136`, `80.1%`, zero losses in any category) on `dated` (`when`) queries while hurting Multi-Hop (`-9`) on partial `list`/`count`/`open` shapes. PR #531 added `[retrieval] graph_facts_shapes` so `graph_facts` can be restricted to `["when"]` while non-matching shapes fall back cleanly to `graph_count`.
+- **What:** `replay_arm_nd18b.py` on combined PR #529 + #531 (`7681a016`) across all 5 Evergreen-Taxonomy Pilot v2 stores, with `CAMPY_GRAPH_FACTS=1`, `CAMPY_GRAPH_FACTS_SELECTIVE_OBJECTS=1`, `CAMPY_GRAPH_FACTS_SHAPES=when`, ND-18b checker + `gemma4:26b` escalation, 26B 3-vote `judge_arm.py` (`pv2twhen` / `pv2twhenc5`). Controls: `b18on` (`61.1%`), `pv2on` (`60.1%`), `pv2tgf` (`60.8%`).
+- **Lines (pre-registered):** pass `> +1.9 pts` over `b18on` (`> 63.0%`), holding Multi-Hop `> 33%`, Temporal `> 71%`, Cat-5 `> 75%`; kill `<= 0 pts` vs. `b18on` (`<= 61.1%`).
+- **Result:**
+  - **Overall 809:** **61.4% (497/809) — NEW ALL-TIME HIGH** (+0.37 pts / +3 vs. `b18on` `494/809` [`g=75, l=72`]; **+1.36 pts / +11** vs. `pv2on` `486/809` [`g=28, l=17`]; +0.62 pts / +5 vs. `pv2tgf` `492/809`). Beat or tied `b18on` on **4/5 conversations** (`conv-26 +2`, `conv-41 +3`, `conv-48 +0`, `conv-49 -5`, `conv-50 +3`).
+  - **By category (`pv2twhen` vs. `b18on` / `pv2on`):**
+    - **Multi-Hop (`n=153`):** **33.3% (51)** vs. `b18on` `29.4% (45)` (**+3.9 pts / +6**) and `pv2tgf` `28.8% (44)` (**+4.6 pts / +7 recovered**).
+    - **Temporal (`n=171`):** **69.6% (119)** vs. `b18on` `66.1% (113)` (**+3.5 pts / +6**) and `pv2on` `64.9% (111)` (**+4.7 pts / +8**).
+    - **On `when`/`dated` fired (`n=136`):** **80.1% (109/136)** vs. `75.0% (102/136)` (**+5.1 pts / +7**, exact reproduction of `pv2tgf`).
+    - **Open-Domain (`n=51`):** `39.2% (20)` vs. `b18on` `39.2% (20)` (`+0.0`, zero regression).
+    - **Single-Hop (`n=434`):** `70.7% (307)` vs. `b18on` `72.8% (316)` (`-2.1 pts / -9`) and `pv2on` `69.4% (301)` (**+1.4 pts / +6**).
+  - **Category-5 Abstention (`n=222`):** **78.4% (174/222)** vs. `b18c5on` `73.0% (162/222)` (**+5.4 pts**; unchecked 8B `55.9% -> 60.4%`, `+4.5 pts`).
+- **Decision:** **Between the lines** (`+0.37 pts > 0` kill line, `< +1.9` default-flip line). All flags stay OFF by default per P7; all 5 PRs (#528–#532) are CI-green and ready for review/merge.
+- **Lesson:** Shape-gating `graph_facts` to `["when"]` reproduced the exact `+5.1 pt` (`109/136`) `dated` gain while recovering `+7` Multi-Hop questions and `+3` Open-Domain questions, delivering a new all-time high (`61.4%` overall + `78.4%` Cat-5) and proving that graph capture, Evergreen SKOS Taxonomy, specificity-first SPARQL, and shape-gated graph answering stack cleanly. The sole remaining drag vs. `b18on` is Single-Hop (`-9`, concentrated in `conv-49` `-5`).

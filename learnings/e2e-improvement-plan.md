@@ -55,10 +55,11 @@ At step 4 every one of the 15 `principled` switches is either on by default or d
 - If a step's graph number moves and the score doesn't, I say so and stop before starting another lever.
 - Every result ends in a ruling, recorded in the Rulings table of `e2e-status.md`: kept, stopped, parked (needs the user to restart), or not ruled. A result is not left without one past the next step's start.
 - A gain is claimed only from a replay on stored stores or when it exceeds the noise. Otherwise the report says "no measurable change".
-- **After every test or trial, two documents are updated in the same PR as the result** (ruled by the user 2026-11-16):
+- **After every test or trial, three documents are updated in the same PR as the result** (updated 2026-11-24; enforced in CI by `pr-score-effect`):
   1. `lessons-learned.md` gets a detailed entry: why we ran it, what we did (edges read and written, flags, stores, what it was compared with), the lines set before the run, the result with its numbers, and the decision.
   2. This plan is updated if the result changes direction: a step added, dropped, reordered or redefined. The change is dated under a "Revision" heading with its reason. A change of direction is the user's ruling; the plan records it, it does not make it.
-  A result PR without its lessons entry is not merged. `e2e-status.md` stays the current-state page.
+  3. The living paper drafts under `learnings/papers/` (`paper1-kg-memory-postmortem.md` and/or `paper2-agent-architectural-drift.md`) are updated with any new empirical result, table row, or architectural-drift finding (or the PR states `Papers: none — <reason>` if purely housekeeping).
+  A result PR without its lessons entry and living-paper update (or `Papers: none — <reason>`) is blocked by CI (`pr-score-effect`). `e2e-status.md` stays the current-state page.
 
 ## Revision, 2026-11-12
 
@@ -245,3 +246,19 @@ The user paused the 2026-11-18 direction/GPU delegation after job 1019. This pla
 - **LongMemEval unparked for window mode (review session, 2026-11-19):** the only independent second sample. A one-question light-capture probe measures seconds per turn; its cost decides between all 500 (pass above +2.2) and a 100-question sign check. All results labelled "light capture". ND-12 is held for the probe's hour.
   - **Probe (job 1013): 3.54 s per turn** with light capture, so the rule gives (b). Ruled: 100 stratified questions with today's default capture (about 93 h), window on against off on the kept stores; kill at 0 or below, pass above +4.8 (a sign check). The kept stores become a reusable LME replay set. Queued after ND-12.
   - **Job 1014 (2026-11-20): stopped by the user** at 10 of 100 questions (5,032 turns, 5.67 s per turn, under the speed stop) to free the GPU for ND-16. No score; not resumable, since the stores are mapped only at the end. A restart is the user's call.
+
+## Revision, 2026-11-24: Evergreen Automated Ontology / Taxonomy Pipeline & Living Papers Check
+
+Ruled by the user after Pilot v2 scaled across all 5 conversations (`HAS_OBJECT -> Concept` `76.3%`, pure-SPARQL Step Q `HIT`s `111 -> 275 / 809`, with `221 / 809` remaining misses in `gold_object_not_reached_from_named_concept`, i.e., missing `INSTANCE_OF / BROADER*` taxonomy links such as `pottery -> craft -> hobby`).
+
+1. **Inline at Capture Time (`< 5 ms` per entity, deterministic P3 rules):**
+   - Whenever capture admits a new entity `Concept` (with an `object_kind` proposal or head noun), normalize to singular lemma, resolve against existing `kind` Concepts (`HAS_PREF_LABEL` / `HAS_ALT_LABEL`), and write `Entity -INSTANCE_OF-> Kind`.
+   - Immediately walk WordNet hypernym chains up to a standard upper-ontology ceiling (`hobby`, `activity`, `sport`, `pet`, `animal`, `instrument`, `artwork`, `book`, `food`, `place`, `organization`, `person`, `event`, `vehicle`, `clothing`) with cycle detection (`B541`), writing `Kind -BROADER-> BroaderKind` at write time so every new turn/document is encoded into the ontology from the start.
+2. **Evergreen Background Sweep (GCL Sweep / Vocab Steward):**
+   - On idle/sweep cycles, run the existing `steward.parentless_kinds` and `steward.owned_without_kind` NamedQueries (`queries/steward.py`) to promote multi-evidence `BROADER` links, merge synonym kinds via `HAS_ALT_LABEL`, and merge newly-confirmed speaker/entity aliases (`Mel -> Melanie`) without blocking interactive turn latency.
+3. **Validation Order:**
+   - Complete the running 809 + Category-5 GPU gate on all 5 Pilot v2 stores (`task-322`) first.
+   - Prototype and validate the evergreen taxonomy module offline against the `221` `gold_object_not_reached_from_named_concept` Step Q failures on our 5 Pilot v2 stores, then wire it into Campy's capture + sweep loop behind a flag (`[observations] evergreen_taxonomy`, off by default) and gate it.
+4. **Living Papers & Lessons Hook (CI enforced):**
+   - Two living paper drafts live under `learnings/papers/` (`paper1-kg-memory-postmortem.md` and `paper2-agent-architectural-drift.md`).
+   - `.github/scripts/check_pr_score_effect.py` (`pr-score-effect`) now enforces that every result PR (touching `learnings/e2e-status.md` or `learnings/lessons-learned.md`) updates both `learnings/lessons-learned.md` and at least one file under `learnings/papers/` (or states `Papers: none — <reason>`).
